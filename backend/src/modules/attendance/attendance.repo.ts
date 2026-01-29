@@ -54,6 +54,19 @@ export class AttendanceRepo {
         } as AttendanceRecord;
     }
 
+    async deleteAttendance(id: string, operator: string): Promise<boolean> {
+        console.log(`[Repo] Deleting record ${id} by ${operator}`);
+        // Mock DB delete operation
+        // In a real scenario, you would interact with the database here.
+        // For mock, we'll just log and return true as if it was deleted.
+
+        // Skill: audit-log-required
+        // Mocking the record details for audit log as we don't have it in memory
+        console.log(`[Audit] ${operator} DELETED record ${id} (Mock Employee, Mock Date)`);
+
+        return true; // Assume successful deletion for mock
+    }
+
     async getRecordById(id: string): Promise<AttendanceRecord | null> {
         // Mock fetch for audit 'before' state
         return {

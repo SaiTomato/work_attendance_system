@@ -5,6 +5,7 @@ import { validationResult } from 'express-validator';
 import { attendanceService } from '../modules/attendance/attendance.service';
 import { createAttendanceValidator, updateAttendanceValidator } from '../modules/attendance/attendance.validator';
 import { authenticate, requireRole } from '../middleware/auth.middleware';
+import { attendanceRepo } from '../modules/attendance/attendance.repo';
 
 const router = Router();
 
@@ -97,6 +98,25 @@ router.get('/audit/:recordId', async (req: Request, res: Response) => {
         res.json({ success: true, data: logs });
     } catch (error) {
         res.status(500).json({ success: false, error: 'Failed to fetch audit logs' });
+    }
+});
+
+// 4. 删除出席记录 (仅限 Admin/HR)
+// Skill: rbac-check & audit-log-required
+router.delete('/:id', authenticate, requireRole(['admin', 'hr']), async (req: any, res: any) => {
+    try {
+        const { id } = req.params;
+        const operator = req.user.username; // 从身份证明（Token）里拿人名，不怕伪造
+
+        const success = await attendanceRepo.deleteAttendance(id, operator);
+
+        if (success) {
+            res.json({ success: true, message: 'Record deleted successfully' });
+        } else {
+            res.status(404).json({ success: false, message: 'Record not found' });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Server error' });
     }
 });
 

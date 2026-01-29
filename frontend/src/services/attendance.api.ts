@@ -72,3 +72,10 @@ export const updateAttendanceStatus = async (id: string, status: string, reason:
     console.log(`[Mock API] Updating ${id} to ${status} because: ${reason}`);
     return Promise.resolve({ success: true });
 };
+
+export const deleteAttendanceRecord = async (id: string): Promise<ApiResponse<void>> => {
+    // 占位：实际调用后端 API
+    // await api.delete(`/attendance/${id}`);
+    console.log(`[Mock API] Deleting record: ${id}`);
+    return Promise.resolve({ success: true });
+};

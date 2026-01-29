@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { fetchExceptions, updateAttendanceStatus } from '../services/attendance.api';
+import { fetchExceptions, updateAttendanceStatus, deleteAttendanceRecord } from '../services/attendance.api';
 import { AttendanceRecord } from '../types';
 import { EditAttendanceModal } from '../components/modals/EditAttendanceModal';
 
@@ -34,6 +34,17 @@ export const AttendanceList: React.FC = () => {
         if (res.success) {
             // Skill: audit-log-required - modifications must be traceable
             loadData();
+        }
+    };
+
+    const handleDelete = async (id: string) => {
+        // Step 2: 确认弹窗
+        if (window.confirm('Are you sure you want to delete this attendance record? This action will be logged.')) {
+            const res = await deleteAttendanceRecord(id);
+            if (res.success) {
+                // Step 3: 更新状态 (重新拉取数据)
+                loadData();
+            }
         }
     };
 
@@ -123,12 +134,22 @@ export const AttendanceList: React.FC = () => {
                                                 <button className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors tooltip" title="View History">
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                                 </button>
+
                                                 {/* Skill: audit-log-required (Override trigger) */}
                                                 <button
                                                     onClick={() => setEditingRecord(record)}
                                                     className="px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-600 hover:text-white transition-all scale-100 hover:scale-[1.05] active:scale-95 border border-indigo-100/50 shadow-sm"
                                                 >
-                                                    Override Status
+                                                    Override
+                                                </button>
+
+                                                {/* Step 1: 显眼的红色删除按钮 */}
+                                                <button
+                                                    onClick={() => handleDelete(record.id)}
+                                                    className="p-2 bg-rose-50 text-rose-500 rounded-lg hover:bg-rose-600 hover:text-white transition-all scale-100 hover:scale-[1.05] active:scale-95 border border-rose-100/50"
+                                                    title="Delete Record"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                                 </button>
                                             </div>
                                         </td>
