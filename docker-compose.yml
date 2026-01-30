@@ -17,7 +17,30 @@ services:
       - ./frontend/src:/app/src # Enable hot reload
       - /app/node_modules
     environment:
-      - VITE_API_URL=http://backend:3000 # Config for frontend to find backend
-  # Will add database later
-  # db:
-  #   image: postgres:15
+      - VITE_API_URL=http://localhost:3000
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=attendance_pass
+      - POSTGRES_DB=attendance_system
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@admin.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
