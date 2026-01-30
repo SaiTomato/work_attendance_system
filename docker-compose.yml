@@ -8,6 +8,11 @@ services:
     volumes:
       - ./backend/src:/app/src # Enable hot reload for source files
       - /app/node_modules # Avoid overwriting container modules with local volume
+    environment:
+      - DATABASE_URL=postgresql://admin:attendance_pass@db:5432/attendance_system?schema=public
+      - PORT=3000
+    depends_on:
+      - db
 
   frontend:
     build: ./frontend
@@ -28,7 +33,7 @@ services:
       - POSTGRES_PASSWORD=attendance_pass
       - POSTGRES_DB=attendance_system
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

@@ -5,11 +5,17 @@ FROM node:18-alpine
 # Set working directory
 WORKDIR /app
 
-# Copy package files first (cache optimization)
+# Copy package files first
 COPY package*.json ./
 
-# Install dependencies in the container
+# Install dependencies
 RUN npm install
+
+# Copy prisma schema for generation
+COPY prisma ./prisma/
+
+# Generate Prisma Client
+RUN npx prisma generate
 
 # Copy source code
 COPY . .

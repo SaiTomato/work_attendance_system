@@ -1,95 +1,124 @@
-
 import { DailyStats, AttendanceRecord } from '../../types';
+import prisma from '../../db';
 
 export class AttendanceRepo {
-    // 占位：实际应该连接数据库查询
-
+    /**
+     * 获取今日异常列表 (late, absent)
+     * 现在的逻辑：从数据库中查询指定日期，且状态不是 present 的记录
+     */
     async getExceptions(date: Date): Promise<AttendanceRecord[]> {
-        console.log(`[Repo] Fetching exceptions for ${date.toISOString()}`);
-        // Mock data for exceptions
-        return [
-            {
-                id: '1',
-                employeeId: 'EMP-001',
-                employeeName: '张三',
-                date: date.toISOString().split('T')[0],
-                status: 'late',
-                checkInTime: '09:45:00'
+        const dateStr = date.toISOString().split('T')[0];
+
+        const records = await prisma.attendance.findMany({
+            where: {
+                date: dateStr,
+                status: {
+                    in: ['late', 'absent'] // 只查异常状态
+                }
             },
-            {
-                id: '2',
-                employeeId: 'EMP-005',
-                employeeName: '李四',
-                date: date.toISOString().split('T')[0],
-                status: 'absent'
+            orderBy: {
+                checkInTime: 'desc'
             }
-        ];
+        });
+
+        // 转换成前端需要的格式
+        return records.map(r => ({
+            ...r,
+            checkInTime: r.checkInTime?.toISOString(),
+            checkOutTime: r.checkOutTime?.toISOString()
+        })) as AttendanceRecord[];
     }
 
-    async getHistoryByEmployee(employeeId: string): Promise<AttendanceRecord[]> {
-        console.log(`[Repo] Fetching history for ${employeeId}`);
-        // Mock data
-        return [
-            { id: '101', employeeId, employeeName: '张三', date: '2023-10-27', status: 'present', checkInTime: '08:55' },
-            { id: '102', employeeId, employeeName: '张三', date: '2023-10-26', status: 'late', checkInTime: '09:15' },
-            { id: '103', employeeId, employeeName: '张三', date: '2023-10-25', status: 'present', checkInTime: '08:58' },
-        ];
+    /**
+     * 修改考勤状态 & 记录审计日志
+     * 注意：这里用到了事务 (Transaction)，保证“改状态”和“记账”要么都成功，要么都失败。
+     */
+    async updateAttendance(id: string, newStatus: string, operator: string, reason: string): Promise<AttendanceRecord | null> {
+        return await prisma.$transaction(async (tx) => {
+            // 1. 获取改之前的数据快照（用于审计）
+            const before = await tx.attendance.findUnique({ where: { id } });
+            if (!before) return null;
+
+            // 2. 执行更新
+            const updated = await tx.attendance.update({
+                where: { id },
+                data: { status: newStatus }
+            });
+
+            // 3. 记一笔审计日志 (Skill: audit-log-required)
+            await tx.auditLog.create({
+                data: {
+                    attendanceId: id,
+                    action: 'UPDATE',
+                    before: before as any,
+                    after: updated as any,
+                    operatedBy: operator,
+                    reason: reason // 使用前端传过来的真实原因
+                }
+            });
+
+            return {
+                ...updated,
+                checkInTime: updated.checkInTime?.toISOString(),
+                checkOutTime: updated.checkOutTime?.toISOString()
+            } as AttendanceRecord;
+        });
     }
 
-    async save(record: AttendanceRecord): Promise<void> {
-        console.log('[Repo] Saving record:', record);
-        // Mock DB insert
-    }
-
-    async update(id: string, updates: Partial<AttendanceRecord>): Promise<AttendanceRecord | null> {
-        console.log(`[Repo] Updating record ${id}:`, updates);
-        // Mock DB update & return new record
-        return {
-            id,
-            employeeId: 'EMP-MOCK',
-            employeeName: 'Mock User',
-            date: '2023-10-27',
-            status: updates.status as any || 'present',
-            ...updates
-        } as AttendanceRecord;
-    }
-
-    async deleteAttendance(id: string, operator: string): Promise<boolean> {
-        console.log(`[Repo] Deleting record ${id} by ${operator}`);
-        // Mock DB delete operation
-        // In a real scenario, you would interact with the database here.
-        // For mock, we'll just log and return true as if it was deleted.
-
-        // Skill: audit-log-required
-        // Mocking the record details for audit log as we don't have it in memory
-        console.log(`[Audit] ${operator} DELETED record ${id} (Mock Employee, Mock Date)`);
-
-        return true; // Assume successful deletion for mock
-    }
-
-    async getRecordById(id: string): Promise<AttendanceRecord | null> {
-        // Mock fetch for audit 'before' state
-        return {
-            id,
-            employeeId: 'EMP-MOCK',
-            employeeName: 'Mock User',
-            date: '2023-10-27',
-            status: 'absent', // Mocking current state as absent
-            checkInTime: undefined
-        };
-    }
-
+    /**
+     * 获取今日统计数据
+     */
     async getDailyStats(date: Date): Promise<DailyStats> {
-        console.log(`[Repo] Fetching stats for ${date.toISOString()}`);
+        const dateStr = date.toISOString().split('T')[0];
+
+        // 并行执行多项统计，提升性能
+        const [total, present, late, absent, leave] = await Promise.all([
+            prisma.employee.count(),
+            prisma.attendance.count({ where: { date: dateStr, status: 'present' } }),
+            prisma.attendance.count({ where: { date: dateStr, status: 'late' } }),
+            prisma.attendance.count({ where: { date: dateStr, status: 'absent' } }),
+            prisma.attendance.count({ where: { date: dateStr, status: 'leave' } }),
+        ]);
+
         return {
-            date: date.toISOString().split('T')[0],
-            totalEmployees: 0,
-            present: 0,
-            late: 0,
-            absent: 0,
-            leave: 0,
-            exceptions: 0
+            date: dateStr,
+            totalEmployees: total,
+            present,
+            late,
+            absent,
+            leave,
+            exceptions: late + absent
         };
+    }
+
+    /**
+     * 删除记录 (物理删除 + 审计记录)
+     */
+    async deleteAttendance(id: string, operator: string): Promise<boolean> {
+        try {
+            await prisma.$transaction(async (tx) => {
+                const record = await tx.attendance.findUnique({ where: { id } });
+                if (!record) throw new Error('Not found');
+
+                // 记一笔删除审计
+                await tx.auditLog.create({
+                    data: {
+                        attendanceId: id,
+                        action: 'DELETE',
+                        before: record as any,
+                        after: undefined, // Or just omit it
+                        operatedBy: operator,
+                        reason: 'Administrative Removal'
+                    }
+                });
+
+                // 真正的删除
+                await tx.attendance.delete({ where: { id } });
+            });
+            return true;
+        } catch (e) {
+            return false;
+        }
     }
 }
 

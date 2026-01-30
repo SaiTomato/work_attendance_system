@@ -1,0 +1,50 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. 员工表
+model Employee {
+  id           String       @id @default(uuid())
+  employeeId   String       @unique
+  name         String
+  departmentId String?
+  attendance   Attendance[]
+  createdAt    DateTime     @default(now())
+}
+
+// 2. 考勤记录表
+model Attendance {
+  id           String     @id @default(uuid())
+  employeeId   String
+  employeeName String
+  date         String
+  status       String
+  checkInTime  DateTime?
+  checkOutTime DateTime?
+  employee     Employee   @relation(fields: [employeeId], references: [employeeId])
+  auditLogs    AuditLog[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+// 3. 审计日志表 (修正：允许解除关联)
+model AuditLog {
+  id           String      @id @default(uuid())
+  attendanceId String?     // 1. 改为可选 (?)
+  action       String
+  before       Json?
+  after        Json?
+  operatedBy   String
+  reason       String?     // 操作理由
+  operatedAt   DateTime    @default(now())
+  // 2. 增加 onDelete: SetNull，这样考勤删了，日志还在
+  attendance   Attendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+}
