@@ -26,7 +26,7 @@ export const Dashboard: React.FC = () => {
                 setExceptions(exceptionsRes.data);
             }
         }).catch(err => {
-            setError('Connection failed: Check if backend is running on port 3000');
+            setError('Connection failed: Check if backend is running on port 4000');
             console.error(err);
         });
     }, []);

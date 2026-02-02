@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -17,6 +18,20 @@ async function main() {
             await new Promise(res => setTimeout(res, 2000));
         }
     }
+
+    // 0. 创建默认管理员 (Skill: rbac-check)
+    const bcrypt = require('bcryptjs');
+    const hashedAdminPassword = await bcrypt.hash('admin', 10);
+
+    await prisma.user.upsert({
+        where: { username: 'admin' },
+        update: {},
+        create: {
+            username: 'admin',
+            password: hashedAdminPassword,
+            role: 'admin',
+        },
+    });
 
     // 1. 创建员工
     const alice = await prisma.employee.upsert({

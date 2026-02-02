@@ -35,16 +35,37 @@ model Attendance {
   updatedAt    DateTime   @updatedAt
 }
 
-// 3. 审计日志表 (修正：允许解除关联)
+// 3. 审计日志表
 model AuditLog {
   id           String      @id @default(uuid())
-  attendanceId String?     // 1. 改为可选 (?)
+  attendanceId String?
   action       String
   before       Json?
   after        Json?
   operatedBy   String
   reason       String?     // 操作理由
   operatedAt   DateTime    @default(now())
-  // 2. 增加 onDelete: SetNull，这样考勤删了，日志还在
   attendance   Attendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+}
+
+// 4. 用户账户表 (用于登入)
+model User {
+  id            String         @id @default(uuid())
+  username      String         @unique
+  password      String
+  role          String         @default("viewer") // admin, manager, hr, viewer
+  departmentId  String?
+  refreshTokens RefreshToken[]
+  createdAt     DateTime       @default(now())
+}
+
+// 5. 刷新令牌表
+model RefreshToken {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  revoked   Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }

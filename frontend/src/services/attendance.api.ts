@@ -1,50 +1,44 @@
+import { api } from './api';
 import { ApiResponse, DashboardStats, AttendanceRecord } from '../types';
 
-// 强制硬编码测试，排除环境变量注入失败的干扰
-const API_URL = 'http://localhost:3000';
+/**
+ * 获取仪表盘统计 - 使用封装好的 axios 实例，自动处理 Token 和端口
+ */
+export const fetchDashboardStats = async (): Promise<ApiResponse<DashboardStats>> => {
+    const res = await api.get('/attendance/dashboard/stats');
+    return res.data;
+};
 
 /**
- * 通用的请求处理函数
+ * 获取异常列表
  */
-async function apiRequest<T>(path: string, options?: RequestInit): Promise<ApiResponse<T>> {
-    const fullUrl = `${API_URL}${path}`;
-    console.log(`[Frontend] Fetching: ${fullUrl}`);
-    try {
-        const response = await fetch(fullUrl, {
-            ...options,
-            headers: {
-                'Content-Type': 'application/json',
-                ...options?.headers,
-            },
-        });
-        return await response.json();
-    } catch (error) {
-        console.error('API Error:', error);
-        return { success: false, message: `Network error when calling ${fullUrl}` };
-    }
-}
-
-// 1. 获取仪表盘统计 - 现在去问后端拿真数据！
-export const fetchDashboardStats = async (): Promise<ApiResponse<DashboardStats>> => {
-    return apiRequest<DashboardStats>('/api/attendance/dashboard/stats');
-};
-
-// 2. 获取异常列表 - 同样去问后端！
 export const fetchExceptions = async (date?: string): Promise<ApiResponse<AttendanceRecord[]>> => {
-    return apiRequest<AttendanceRecord[]>('/api/attendance/exceptions');
+    const res = await api.get('/attendance/exceptions', {
+        params: { date }
+    });
+    return res.data;
 };
 
-// 3. 修改状态
+/**
+ * 为单个员工获取历史记录 (之前 Service 缺失的逻辑)
+ */
+export const fetchEmployeeHistory = async (employeeId: string): Promise<ApiResponse<AttendanceRecord[]>> => {
+    const res = await api.get(`/attendance/history/${employeeId}`);
+    return res.data;
+};
+
+/**
+ * 修改考勤状态
+ */
 export const updateAttendanceStatus = async (id: string, status: string, reason: string): Promise<ApiResponse<void>> => {
-    return apiRequest<void>(`/api/attendance/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ status, reason }),
-    });
+    const res = await api.put(`/attendance/${id}`, { status, reason });
+    return res.data;
 };
 
-// 4. 删除记录
+/**
+ * 删除考勤记录
+ */
 export const deleteAttendanceRecord = async (id: string): Promise<ApiResponse<void>> => {
-    return apiRequest<void>(`/api/attendance/${id}`, {
-        method: 'DELETE',
-    });
+    const res = await api.delete(`/attendance/${id}`);
+    return res.data;
 };

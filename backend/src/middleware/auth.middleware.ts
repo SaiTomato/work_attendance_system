@@ -2,18 +2,28 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserPayload } from '../types';
 
-// Mock Auth Middleware
-// Skill: rbac-check (所有非只读接口必须校验 JWT - 这里 Mock 注入一个 admin 用户)
-export const authenticate = (req: Request, res: Response, next: NextFunction) => {
-    // In real app, verify JWT here
-    const mockUser: UserPayload = {
-        id: 'ADMIN-001',
-        username: 'admin',
-        role: 'admin'
-    };
+import { verifyAccessToken } from '../services/tokenService';
 
-    req.user = mockUser;
-    next();
+// Skill: rbac-check - 所有关键接口必须校验 JWT
+export const authenticate = (req: Request, res: Response, next: NextFunction) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ success: false, message: 'Authentication token missing' });
+    }
+
+    try {
+        const decoded = verifyAccessToken(token);
+        req.user = {
+            id: decoded.id,
+            username: decoded.username,
+            role: decoded.role as any
+        };
+        next();
+    } catch (error) {
+        return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+    }
 };
 
 export const requireRole = (roles: UserPayload['role'][]) => {
