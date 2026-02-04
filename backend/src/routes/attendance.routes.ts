@@ -1,122 +1,116 @@
-
 import { Router, Request, Response } from 'express';
-// @ts-ignore
 import { validationResult } from 'express-validator';
 import { attendanceService } from '../modules/attendance/attendance.service';
 import { createAttendanceValidator, updateAttendanceValidator } from '../modules/attendance/attendance.validator';
 import { authenticate, requireRole } from '../middleware/auth.middleware';
-import { attendanceRepo } from '../modules/attendance/attendance.repo';
 
 const router = Router();
 
-// Skill: rbac-check - 所有接口(除可能公开的)进行认证
+// Skill: rbac-check - 所有接口进行认证
 router.use(authenticate);
 
-// Helper for validation check
+// Helper for standard response format
+const successResponse = (res: Response, data: any = null, message: string = 'Success') => {
+    res.json({ success: true, data, message });
+};
+
+const errorResponse = (res: Response, error: any, code: number = 500) => {
+    res.status(code).json({
+        success: false,
+        error: typeof error === 'string' ? error : undefined,
+        message: typeof error === 'string' ? error : 'Operation failed',
+        details: typeof error !== 'string' ? error : undefined
+    });
+};
+
 const validate = (req: Request, res: Response, next: any) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, error: errors.array() });
+        return errorResponse(res, errors.array(), 400);
     }
     next();
 };
 
+// 1. 创建记录
 router.post('/', requireRole(['admin', 'hr', 'manager']), createAttendanceValidator, validate, async (req: Request, res: Response) => {
     try {
-        // Mock operator from Auth middleware
-        await attendanceService.createAttendance({
+        const record = await attendanceService.createAttendance({
             ...req.body,
-            operator: req.user?.username || 'unknown'
+            operator: req.user?.username
         });
-        res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ success: false, error: 'Failed to create record' });
+        successResponse(res, record, 'Record created');
+    } catch (error: any) {
+        errorResponse(res, error.message);
     }
 });
 
+// 2. 修改记录
 router.put('/:id', requireRole(['admin', 'hr']), updateAttendanceValidator, validate, async (req: Request, res: Response) => {
     try {
-        // Skill: attendance-api-create - 必须处理 validationResult (handled by validate middleware)
         await attendanceService.updateAttendance(
             req.params.id,
             req.body.status,
             req.user?.username || 'unknown',
             req.body.reason
         );
-        res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ success: false, error: 'Failed to update record' });
+        successResponse(res, null, 'Record updated');
+    } catch (error: any) {
+        errorResponse(res, error.message);
     }
 });
 
-// Skill: rbac-check - 将来这里必须添加权限校验中间件
+// 3. 统计数据
 router.get('/dashboard/stats', async (req: Request, res: Response) => {
     try {
         const stats = await attendanceService.getDashboardStats();
-        // Skill: attendance-api-create - 统一响应格式
-        res.json({
-            success: true,
-            data: stats
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Failed to fetch dashboard stats'
-        });
+        successResponse(res, stats);
+    } catch (error: any) {
+        errorResponse(res, error.message);
     }
 });
 
-// Skill: rbac-check - 此接口应仅对 Manager/Admin/HR 开放
+// 4. 异常列表
 router.get('/exceptions', async (req: Request, res: Response) => {
     try {
         const date = req.query.date as string;
         const list = await attendanceService.getExceptionList(date);
-        res.json({
-            success: true,
-            data: list
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Failed to fetch exception list'
-        });
+        successResponse(res, list);
+    } catch (error: any) {
+        errorResponse(res, error.message);
     }
 });
 
+// 5. 个人历史
 router.get('/history/:employeeId', async (req: Request, res: Response) => {
     try {
         const history = await attendanceService.getEmployeeHistory(req.params.employeeId);
-        res.json({ success: true, data: history });
-    } catch (error) {
-        res.status(500).json({ success: false, error: 'Failed to fetch history' });
+        successResponse(res, history);
+    } catch (error: any) {
+        errorResponse(res, error.message);
     }
 });
 
+// 6. 审计日志
 router.get('/audit/:recordId', async (req: Request, res: Response) => {
     try {
         const logs = await attendanceService.getAuditLogs(req.params.recordId);
-        res.json({ success: true, data: logs });
-    } catch (error) {
-        res.status(500).json({ success: false, error: 'Failed to fetch audit logs' });
+        successResponse(res, logs);
+    } catch (error: any) {
+        errorResponse(res, error.message);
     }
 });
 
-// 4. 删除出席记录 (仅限 Admin/HR)
-// Skill: rbac-check & audit-log-required
-router.delete('/:id', authenticate, requireRole(['admin', 'hr']), async (req: any, res: any) => {
+// 7. 软删除记录
+router.delete('/:id', requireRole(['admin', 'hr']), async (req: Request, res: Response) => {
     try {
-        const { id } = req.params;
-        const operator = req.user.username; // 从身份证明（Token）里拿人名，不怕伪造
-
-        const success = await attendanceRepo.deleteAttendance(id, operator);
-
+        const success = await attendanceService.deleteAttendance(req.params.id, req.user?.username || 'unknown');
         if (success) {
-            res.json({ success: true, message: 'Record deleted successfully' });
+            successResponse(res, null, 'Record deleted');
         } else {
-            res.status(404).json({ success: false, message: 'Record not found' });
+            errorResponse(res, 'Record not found', 404);
         }
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Server error' });
+    } catch (error: any) {
+        errorResponse(res, error.message);
     }
 });
 

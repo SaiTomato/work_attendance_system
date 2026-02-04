@@ -1,34 +1,41 @@
-
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchDashboardStats, fetchExceptions } from '../services/attendance.api';
 import { DashboardStats, AttendanceRecord } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
 // Skill: frontend-admin-view
 // Rules: 默认只展示“异常”，表格优先
 export const Dashboard: React.FC = () => {
     const [stats, setStats] = useState<DashboardStats | null>(null);
     const [exceptions, setExceptions] = useState<AttendanceRecord[]>([]);
-
     const [error, setError] = useState<string | null>(null);
+    const { user } = useAuth();
 
-    useEffect(() => {
+    const isViewer = user?.role === 'viewer';
+
+    const loadData = () => {
         Promise.all([
             fetchDashboardStats(),
             fetchExceptions()
         ]).then(([statsRes, exceptionsRes]) => {
             if (statsRes.success && statsRes.data) {
                 setStats(statsRes.data);
-            } else {
-                setError(statsRes.message || 'Stats fetch failed');
+            } else if (statsRes.success === false) {
+                setError(statsRes.message || '統計データの取得に失敗しました');
             }
+
             if (exceptionsRes.success && exceptionsRes.data) {
                 setExceptions(exceptionsRes.data);
             }
         }).catch(err => {
-            setError('Connection failed: Check if backend is running on port 4000');
+            setError('バックエンドに接続できません。ポート4000が動作しているか確認してください。');
             console.error(err);
         });
+    };
+
+    useEffect(() => {
+        loadData();
     }, []);
 
     if (error) return (
@@ -36,16 +43,16 @@ export const Dashboard: React.FC = () => {
             <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mb-4">
                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
             </div>
-            <h3 className="text-xl font-bold text-slate-800">Connection Error</h3>
+            <h3 className="text-xl font-bold text-slate-800">接続エラー</h3>
             <p className="text-slate-500 mt-2">{error}</p>
-            <button onClick={() => window.location.reload()} className="mt-6 btn-premium btn-primary px-8">Retry Connection</button>
+            <button onClick={() => window.location.reload()} className="mt-6 btn-premium btn-primary px-8">再試行</button>
         </div>
     );
 
     if (!stats) return (
         <div className="flex flex-col items-center justify-center min-h-[400px]">
             <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-            <p className="mt-4 text-slate-500 font-medium">Loading analytics...</p>
+            <p className="mt-4 text-slate-500 font-medium">分析データを読み込み中...</p>
         </div>
     );
 
@@ -53,38 +60,38 @@ export const Dashboard: React.FC = () => {
         <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Today's Overview</h2>
-                    <p className="text-slate-500 mt-1">Snapshot for {stats.date}</p>
+                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight">本日の概況</h2>
+                    <p className="text-slate-500 mt-1">{stats.date} のスナップショット</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button className="btn-premium bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 shadow-sm">Export Report</button>
-                    <button className="btn-premium btn-primary">Refresh Data</button>
+                    {!isViewer && <button className="btn-premium bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 shadow-sm">レポート出力</button>}
+                    <button onClick={loadData} className="btn-premium btn-primary">データを更新</button>
                 </div>
             </header>
 
             {/* Premium Stat Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatCard
-                    label="Total Workforce"
+                    label="総従業員数"
                     value={stats.totalEmployees}
                     icon={<UsersIcon />}
                     color="indigo"
                 />
                 <StatCard
-                    label="Present Today"
+                    label="本日の出席"
                     value={stats.present}
                     icon={<CheckCircleIcon />}
                     color="emerald"
                 />
                 <StatCard
-                    label="Critical Exceptions"
+                    label="重大な例外"
                     value={stats.exceptions}
                     icon={<ExclamationTriangleIcon />}
                     color="rose"
                     isCritical
                 />
                 <StatCard
-                    label="On Leave"
+                    label="休暇/欠勤"
                     value={stats.leave}
                     icon={<CalendarIcon />}
                     color="amber"
@@ -98,10 +105,10 @@ export const Dashboard: React.FC = () => {
                         <div className="p-2 bg-rose-50 rounded-lg">
                             <ExclamationTriangleIcon className="w-5 h-5 text-rose-600" />
                         </div>
-                        <h3 className="text-xl font-bold text-slate-900">Flagged Staff List</h3>
+                        <h3 className="text-xl font-bold text-slate-900">要注意スタッフレコード</h3>
                     </div>
                     <span className="px-3 py-1 bg-rose-100 text-rose-700 rounded-full text-xs font-bold uppercase tracking-wider">
-                        {exceptions.length} Issues Found
+                        {exceptions.length} 件の異常を検知
                     </span>
                 </div>
 
@@ -110,16 +117,16 @@ export const Dashboard: React.FC = () => {
                         <thead>
                             <tr className="bg-slate-50/50">
                                 <th className="px-8 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">ID</th>
-                                <th className="px-8 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">Employee Name</th>
-                                <th className="px-8 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">Incident Type</th>
-                                <th className="px-8 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">Time Registered</th>
-                                <th className="px-8 py-4 text-right text-xs font-bold text-slate-400 uppercase tracking-widest">Action</th>
+                                <th className="px-8 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">氏名</th>
+                                <th className="px-8 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">例外タイプ</th>
+                                <th className="px-8 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">記録時間</th>
+                                <th className="px-8 py-4 text-right text-xs font-bold text-slate-400 uppercase tracking-widest">アクション</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {exceptions.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-8 py-12 text-center text-slate-400 italic">No exceptions recorded for today.</td>
+                                    <td colSpan={5} className="px-8 py-12 text-center text-slate-400 italic">本日の異常は記録されていません。</td>
                                 </tr>
                             ) : (
                                 exceptions.map((record) => (
@@ -140,15 +147,15 @@ export const Dashboard: React.FC = () => {
                                                     : 'bg-rose-50 text-rose-700 border-rose-100'
                                                 }`}>
                                                 <span className={`w-1.5 h-1.5 rounded-full mr-2 ${record.status === 'late' ? 'bg-amber-400' : 'bg-rose-400'}`}></span>
-                                                {record.status.toUpperCase()}
+                                                {record.status === 'late' ? '遅刻' : '欠勤'}
                                             </span>
                                         </td>
                                         <td className="px-8 py-5 text-sm text-slate-500">
-                                            {record.checkInTime || 'No Record'}
+                                            {record.checkInTime ? new Date(record.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '未記録'}
                                         </td>
                                         <td className="px-8 py-5 text-right">
                                             <Link to="/attendance/list" className="text-indigo-600 hover:text-indigo-900 text-sm font-bold transition-opacity opacity-0 group-hover:opacity-100">
-                                                Review &rarr;
+                                                詳細を表示 &rarr;
                                             </Link>
                                         </td>
                                     </tr>
@@ -160,7 +167,7 @@ export const Dashboard: React.FC = () => {
 
                 <div className="px-8 py-4 bg-slate-50/50 border-t border-slate-200/60 text-right">
                     <Link to="/attendance/list" className="inline-flex items-center text-indigo-600 font-bold hover:text-indigo-800 transition-colors gap-2">
-                        View Detailed Log
+                        詳細なログを閲覧
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
                     </Link>
                 </div>
@@ -193,7 +200,7 @@ const StatCard = ({ label, value, icon, color, isCritical }: any) => {
             </div>
             <div className="mt-4 flex items-center text-xs font-medium">
                 <span className="text-emerald-500 font-bold">↑ 12%</span>
-                <span className="text-slate-400 ml-1">vs yesterday</span>
+                <span className="text-slate-400 ml-1">前日比</span>
             </div>
         </div>
     );
@@ -212,6 +219,5 @@ const ExclamationTriangleIcon = ({ className }: any) => (
 const CalendarIcon = () => (
     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
 );
-
 
 export default Dashboard;

@@ -10,51 +10,77 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// 1. 员工表
-model Employee {
-  id           String       @id @default(uuid())
-  employeeId   String       @unique
-  name         String
-  departmentId String?
-  attendance   Attendance[]
-  createdAt    DateTime     @default(now())
+// 1. 部门实体
+model Department {
+  id          String   @id @default(uuid())
+  name        String   @unique // 例如: "技术部"
+  code        String   @unique // 例如: "TECH"
+  description String?
+
+  // 关联
+  employees   Employee[]
+  users       User[]
+  rules       AttendanceRule[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime? // 用于软删除
 }
 
-// 2. 考勤记录表
+// 2. 员工表
+model Employee {
+  id           String       @id @default(uuid())
+  employeeId   String       @unique // 员工工号
+  name         String
+  
+  // 关联部门
+  departmentId String?
+  department   Department?  @relation(fields: [departmentId], references: [id])
+  
+  // 关联用户 (1:1 关联)
+  userId       String?      @unique
+  user         User?        @relation(fields: [userId], references: [id])
+
+  attendance   Attendance[]
+  rules        AttendanceRule[] // 个人特殊规则绑定
+  
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  deletedAt    DateTime?    // 用于软删除
+}
+
+// 3. 考勤记录表
 model Attendance {
   id           String     @id @default(uuid())
   employeeId   String
   employeeName String
-  date         String
-  status       String
+  date         String     // yyyy-MM-dd
+  status       String     // present, late, absent, leave, etc.
   checkInTime  DateTime?
   checkOutTime DateTime?
+  
   employee     Employee   @relation(fields: [employeeId], references: [employeeId])
   auditLogs    AuditLog[]
+  
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?  // 用于软删除
 }
 
-// 3. 审计日志表
-model AuditLog {
-  id           String      @id @default(uuid())
-  attendanceId String?
-  action       String
-  before       Json?
-  after        Json?
-  operatedBy   String
-  reason       String?     // 操作理由
-  operatedAt   DateTime    @default(now())
-  attendance   Attendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
-}
-
-// 4. 用户账户表 (用于登入)
+// 4. 用户账户表 (用于登录与权限控制)
 model User {
   id            String         @id @default(uuid())
   username      String         @unique
   password      String
   role          String         @default("viewer") // admin, manager, hr, viewer
+  
+  // 部门关联 (用于权限隔离)
   departmentId  String?
+  department    Department?    @relation(fields: [departmentId], references: [id])
+  
+  // 员工关联
+  employee      Employee?
+  
   refreshTokens RefreshToken[]
   createdAt     DateTime       @default(now())
 }
@@ -68,4 +94,41 @@ model RefreshToken {
   revoked   Boolean  @default(false)
   expiresAt DateTime
   createdAt DateTime @default(now())
+}
+
+// 6. 考勤规则表
+model AttendanceRule {
+  id                String   @id @default(uuid())
+  name              String   
+  
+  standardCheckIn   String   @default("09:00")
+  standardCheckOut  String   @default("18:00")
+  
+  lateGracePeriod   Int      @default(5)  
+  absentThreshold   Int      @default(120) 
+  
+  isDefault         Boolean  @default(false)
+  effectiveDate     DateTime @default(now())
+
+  // 关联
+  departmentId      String?
+  department        Department? @relation(fields: [departmentId], references: [id])
+  employees         Employee[] 
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// 7. 审计日志表
+model AuditLog {
+  id           String      @id @default(uuid())
+  attendanceId String?
+  action       String      // CREATE, UPDATE, DELETE, etc.
+  before       Json?
+  after        Json?
+  operatedBy   String      // User.username
+  reason       String?     
+  operatedAt   DateTime    @default(now())
+  
+  attendance   Attendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
 }
