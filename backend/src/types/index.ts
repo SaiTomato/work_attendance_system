@@ -33,6 +33,8 @@ export interface DailyStats {
     late: number;
     absent: number;
     leave: number;
+    unattended: number;
+    successOut: number; // 新增：正常下班的人数
     exceptions: number;
 }
 

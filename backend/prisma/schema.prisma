@@ -137,6 +137,8 @@ model AttendanceRule {
   name            String   // 规则名称，例如“标准办公室时间”
   standardCheckIn String   // 格式: "09:00"
   standardCheckOut String  // 格式: "18:00"
+  allowedCheckInStart String @default("05:00") // 允许开始打卡时间 (Requirement: 可开始打卡的时间)
+  maxOvertimeHours   Int    @default(3)       // 规定加班时长 (单位: 小时)
   lateGracePeriod Int      @default(5)  // 宽限期（分钟）
   absentThreshold Int      @default(120) // 超过多久算缺勤（分钟）
   isDefault       Boolean  @default(false)

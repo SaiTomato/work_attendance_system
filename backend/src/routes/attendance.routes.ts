@@ -3,6 +3,7 @@ import { validationResult } from 'express-validator';
 import { attendanceService } from '../modules/attendance/attendance.service';
 import { createAttendanceValidator, updateAttendanceValidator } from '../modules/attendance/attendance.validator';
 import { authenticate, requireRole } from '../middleware/auth.middleware';
+import prisma from '../db';
 
 const router = Router();
 
@@ -31,7 +32,89 @@ const validate = (req: Request, res: Response, next: any) => {
     next();
 };
 
-// 1. 创建记录
+// 1. 生成打卡 Token (员工手机端调用)
+router.get('/token', async (req: Request, res: Response) => {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { id: req.user?.id },
+            include: { employee: true }
+        });
+
+        if (!user?.employee) return errorResponse(res, '未绑定员工', 400);
+
+        // 生成一个包含时间戳的令牌 (简单加密示例)
+        const timestamp = Date.now();
+        const rawToken = `${user.employee.employeeId}|${timestamp}`;
+        const encodedToken = Buffer.from(rawToken).toString('base64');
+
+        successResponse(res, { token: encodedToken, expiresAt: timestamp + 30000 }, 'Token generated');
+    } catch (error: any) {
+        errorResponse(res, error.message);
+    }
+});
+
+// 2. 扫描 Token 并打卡 (扫码端调用)
+router.post('/scan', async (req: Request, res: Response) => {
+    try {
+        const { token } = req.body;
+        if (!token) return errorResponse(res, 'Token missing', 400);
+
+        // 解码并校验时效
+        const decoded = Buffer.from(token, 'base64').toString('utf-8');
+        const [employeeId, timestampStr] = decoded.split('|');
+        const timestamp = parseInt(timestampStr);
+
+        if (Date.now() - timestamp > 30000) {
+            return errorResponse(res, '打卡码已过期，请重新生成 (Code expired)', 403);
+        }
+
+        // 查找员工并执行打卡逻辑 (复用 createAttendance 包含 Anomaly 拦截)
+        const employee = await prisma.employee.findUnique({ where: { employeeId } });
+        if (!employee) return errorResponse(res, 'Employee not found', 404);
+
+        const record = await attendanceService.createAttendance({
+            employeeId,
+            employeeName: employee.name,
+            date: new Date().toISOString().split('T')[0],
+            operator: 'QR_SCANNER'
+        });
+
+        successResponse(res, record, '扫码打卡成功');
+    } catch (error: any) {
+        // 如果触发了 Anomaly 拦截，error.message 会通过这里返回给扫码设备
+        errorResponse(res, error.message, 403);
+    }
+});
+
+// 3. 自助打卡 (遗留按钮接口，可选保留用于测试)
+router.post('/punch', async (req: Request, res: Response) => {
+    try {
+        // 通过关联的 User 找到对应的 EmployeeID
+        const user = await prisma.user.findUnique({
+            where: { id: req.user?.id },
+            include: { employee: true }
+        });
+
+        if (!user?.employee) {
+            return errorResponse(res, '尚未关联员工档案，无法打卡', 400);
+        }
+
+        const record = await attendanceService.createAttendance({
+            employeeId: user.employee.employeeId,
+            employeeName: user.employee.name,
+            date: new Date().toISOString().split('T')[0],
+            checkInTime: new Date().toISOString(),
+            operator: req.user?.username
+        });
+
+        successResponse(res, record, '打卡成功');
+    } catch (error: any) {
+        // 如果后端 throw 了 anomaly.message，这里会捕获并返回给前端
+        errorResponse(res, error.message, 403);
+    }
+});
+
+// 2. 管理员手动创建记录 (需权限)
 router.post('/', requireRole(['admin', 'hr', 'manager']), createAttendanceValidator, validate, async (req: Request, res: Response) => {
     try {
         const record = await attendanceService.createAttendance({
@@ -44,7 +127,7 @@ router.post('/', requireRole(['admin', 'hr', 'manager']), createAttendanceValida
     }
 });
 
-// 2. 修改记录
+// 3. 修改记录
 router.put('/:id', requireRole(['admin', 'hr']), updateAttendanceValidator, validate, async (req: Request, res: Response) => {
     try {
         await attendanceService.updateAttendance(
@@ -59,7 +142,7 @@ router.put('/:id', requireRole(['admin', 'hr']), updateAttendanceValidator, vali
     }
 });
 
-// 3. 统计数据
+// 4. 统计数据
 router.get('/dashboard/stats', async (req: Request, res: Response) => {
     try {
         const stats = await attendanceService.getDashboardStats();
@@ -69,7 +152,7 @@ router.get('/dashboard/stats', async (req: Request, res: Response) => {
     }
 });
 
-// 4. 异常列表
+// 5. 异常列表
 router.get('/exceptions', async (req: Request, res: Response) => {
     try {
         const date = req.query.date as string;
@@ -80,7 +163,7 @@ router.get('/exceptions', async (req: Request, res: Response) => {
     }
 });
 
-// 5. 个人历史
+// 6. 个人历史
 router.get('/history/:employeeId', async (req: Request, res: Response) => {
     try {
         const history = await attendanceService.getEmployeeHistory(req.params.employeeId);
@@ -90,7 +173,7 @@ router.get('/history/:employeeId', async (req: Request, res: Response) => {
     }
 });
 
-// 6. 审计日志
+// 7. 审计日志
 router.get('/audit/:recordId', async (req: Request, res: Response) => {
     try {
         const logs = await attendanceService.getAuditLogs(req.params.recordId);
@@ -100,7 +183,7 @@ router.get('/audit/:recordId', async (req: Request, res: Response) => {
     }
 });
 
-// 7. 软删除记录
+// 8. 软删除记录
 router.delete('/:id', requireRole(['admin', 'hr']), async (req: Request, res: Response) => {
     try {
         const success = await attendanceService.deleteAttendance(req.params.id, req.user?.username || 'unknown');

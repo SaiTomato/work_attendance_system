@@ -26,16 +26,23 @@ export class AttendanceService {
      * 创建考勤记录，自动计算状态
      */
     async createAttendance(data: any): Promise<AttendanceRecord> {
-        // 1. 获取员工档案和适用的规则
+        // 1. 获取员工档案
         const employee = await prisma.employee.findUnique({
             where: { employeeId: data.employeeId }
         });
 
         if (!employee) throw new Error('Employee not found');
 
+        // 2. 【核心新增】检测当前是否存在未处理的考勤异常
+        // 如果是管理员/管理员手动补录，可能需要跳过此逻辑，但对于员工自助打卡必须拦截
+        const anomaly = await attendanceRepo.getEmployeeAnomaly(data.employeeId);
+        if (anomaly) {
+            throw new Error(anomaly.message); // 抛出具体的异常信息给前端
+        }
+
         const rule = await this.getApplicableRule(data.employeeId);
 
-        // 2. 自动计算状态 (如果没有手动指定状态)
+        // 3. 自动计算状态 (如果没有手动指定状态)
         if (!data.status) {
             const checkInDate = data.checkInTime ? new Date(data.checkInTime) : null;
             data.status = AttendanceEngine.calculateStatus(checkInDate, rule, employee);

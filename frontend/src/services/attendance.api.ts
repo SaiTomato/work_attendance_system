@@ -1,10 +1,10 @@
 import { api } from './api';
-import { ApiResponse, DashboardStats, AttendanceRecord } from '../types';
+import { ApiResponse, DailyStats, AttendanceRecord } from '../types';
 
 /**
  * 获取仪表盘统计 - 使用封装好的 axios 实例，自动处理 Token 和端口
  */
-export const fetchDashboardStats = async (): Promise<ApiResponse<DashboardStats>> => {
+export const fetchDashboardStats = async (): Promise<ApiResponse<DailyStats>> => {
     const res = await api.get('/attendance/dashboard/stats');
     return res.data;
 };
@@ -32,6 +32,30 @@ export const fetchEmployeeHistory = async (employeeId: string): Promise<ApiRespo
  */
 export const updateAttendanceStatus = async (id: string, status: string, reason: string): Promise<ApiResponse<void>> => {
     const res = await api.put(`/attendance/${id}`, { status, reason });
+    return res.data;
+};
+
+/**
+ * 自助打卡 (Punch In/Out)
+ */
+export const punchAttendance = async (): Promise<ApiResponse<AttendanceRecord>> => {
+    const res = await api.post('/attendance/punch');
+    return res.data;
+};
+
+/**
+ * 获取打卡令牌 (30秒有效)
+ */
+export const fetchPunchToken = async (): Promise<ApiResponse<{ token: string, expiresAt: number }>> => {
+    const res = await api.get('/attendance/token');
+    return res.data;
+};
+
+/**
+ * 扫描并提交 Token (扫码端口使用)
+ */
+export const scanPunchToken = async (token: string): Promise<ApiResponse<AttendanceRecord>> => {
+    const res = await api.post('/attendance/scan', { token });
     return res.data;
 };
 

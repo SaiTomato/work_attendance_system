@@ -1,10 +1,12 @@
-export interface DashboardStats {
+export interface DailyStats {
     date: string;
     totalEmployees: number;
     present: number;
     late: number;
     absent: number;
     leave: number;
+    unattended: number;
+    successOut: number;
     exceptions: number;
 }
 

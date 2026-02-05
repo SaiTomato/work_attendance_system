@@ -1,15 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchDashboardStats, fetchExceptions } from '../services/attendance.api';
-import { DashboardStats, AttendanceRecord } from '../types';
+import { fetchDashboardStats, fetchExceptions, punchAttendance } from '../services/attendance.api';
+import { DailyStats, AttendanceRecord } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
 // Skill: frontend-admin-view
 // Rules: 默认只展示“异常”，表格优先
 export const Dashboard: React.FC = () => {
-    const [stats, setStats] = useState<DashboardStats | null>(null);
+    const [stats, setStats] = useState<DailyStats | null>(null);
     const [exceptions, setExceptions] = useState<AttendanceRecord[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const [punchError, setPunchError] = useState<string | null>(null);
+    const [isPunching, setIsPunching] = useState(false);
     const { user } = useAuth();
 
     const isViewer = user?.role === 'viewer';
@@ -32,6 +34,26 @@ export const Dashboard: React.FC = () => {
             setError('バックエンドに接続できません。ポート4000が動作しているか確認してください。');
             console.error(err);
         });
+    };
+
+    const handlePunch = async () => {
+        setIsPunching(true);
+        setPunchError(null);
+        try {
+            const res = await punchAttendance();
+            if (res.success) {
+                alert('打卡成功！');
+                loadData();
+            } else {
+                setPunchError(res.message || '打卡失败');
+            }
+        } catch (err: any) {
+            // 后端拦截触发后的 403 错误会在这里显示消息
+            const msg = err.response?.data?.message || '打卡被系统拒绝';
+            setPunchError(msg);
+        } finally {
+            setIsPunching(false);
+        }
     };
 
     useEffect(() => {
@@ -64,34 +86,75 @@ export const Dashboard: React.FC = () => {
                     <p className="text-slate-500 mt-1">{stats.date} のスナップショット</p>
                 </div>
                 <div className="flex items-center gap-3">
+                    <button
+                        onClick={handlePunch}
+                        disabled={isPunching}
+                        className={`btn-premium px-8 py-3 text-white font-bold rounded-xl shadow-lg transition-all active:scale-95 flex items-center gap-2 ${isPunching ? 'bg-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 shadow-indigo-200'}`}
+                    >
+                        {isPunching ? (
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        ) : <ClockIcon />}
+                        {isPunching ? '処理中...' : '出勤/退勤打卡'}
+                    </button>
                     {!isViewer && <button className="btn-premium bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 shadow-sm">レポート出力</button>}
-                    <button onClick={loadData} className="btn-premium btn-primary">データを更新</button>
+                    <button onClick={loadData} className="btn-premium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">数据更新</button>
                 </div>
             </header>
 
+            {/* 醒目的异常拦截警告 */}
+            {punchError && (
+                <div className="animate-in fade-in zoom-in duration-300 bg-rose-50 border-2 border-rose-200 rounded-2xl p-6 flex items-start gap-4 shadow-xl shadow-rose-100">
+                    <div className="bg-rose-500 text-white p-3 rounded-xl">
+                        <ExclamationTriangleIcon className="w-6 h-6" />
+                    </div>
+                    <div>
+                        <h4 className="text-lg font-bold text-rose-900">打卡校验失败 (考勤异常拦截)</h4>
+                        <p className="text-rose-700 mt-1 font-medium">{punchError}</p>
+                        <p className="text-rose-500 text-sm mt-3 flex items-center gap-1 italic">
+                            请尽快前往管理处处理异常状态，管理员确认后方可解锁后续打卡权限。
+                        </p>
+                    </div>
+                    <button onClick={() => setPunchError(null)} className="ml-auto text-rose-400 hover:text-rose-600">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+            )}
+
             {/* Premium Stat Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
                 <StatCard
-                    label="総従業員数"
+                    label="总员工数"
                     value={stats.totalEmployees}
                     icon={<UsersIcon />}
                     color="indigo"
                 />
                 <StatCard
-                    label="本日の出席"
+                    label="正常出席"
                     value={stats.present}
                     icon={<CheckCircleIcon />}
                     color="emerald"
                 />
                 <StatCard
-                    label="重大な例外"
+                    label="下班打卡"
+                    value={stats.successOut}
+                    icon={<ArrowRightOnRectangleIcon />}
+                    color="cyan"
+                />
+                <StatCard
+                    label="未出席 (待命)"
+                    value={stats.unattended}
+                    icon={<ClockIcon />}
+                    color="slate"
+                />
+                <StatCard
+                    label="考勤异常"
                     value={stats.exceptions}
                     icon={<ExclamationTriangleIcon />}
                     color="rose"
-                    isCritical
+                    isCritical={stats.exceptions > 0}
                 />
                 <StatCard
-                    label="休暇/欠勤"
+                    label="休暇/休假"
                     value={stats.leave}
                     icon={<CalendarIcon />}
                     color="amber"
@@ -183,6 +246,8 @@ const StatCard = ({ label, value, icon, color, isCritical }: any) => {
         emerald: 'bg-emerald-600 shadow-emerald-200',
         rose: 'bg-rose-600 shadow-rose-200',
         amber: 'bg-amber-600 shadow-amber-200',
+        slate: 'bg-slate-500 shadow-slate-200',
+        cyan: 'bg-cyan-600 shadow-cyan-200', // 新增 Cyan 颜色支持
     };
 
     return (
@@ -218,6 +283,12 @@ const ExclamationTriangleIcon = ({ className }: any) => (
 );
 const CalendarIcon = () => (
     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+);
+const ClockIcon = () => (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+);
+const ArrowRightOnRectangleIcon = () => (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" /></svg>
 );
 
 export default Dashboard;

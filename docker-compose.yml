@@ -11,6 +11,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://admin:attendance_pass@db:5432/attendance_system?schema=public
       - PORT=3000
+      - TZ=Asia/Tokyo
     depends_on:
       - db
 
@@ -22,7 +23,11 @@ services:
       - ./frontend:/app # 2. 扩大同步范围
       - frontend_node_modules:/app/node_modules # 3. 命名卷
     environment:
-      - VITE_API_URL=http://localhost:3000
+      # 重要：这里必须改成您电脑的真实局域网 IP，手机才能访问接口
+      # 示例: http://192.168.1.100:4000
+      # - VITE_API_URL=http://localhost:4000
+      - VITE_API_URL=http://192.168.100.79:4000
+      - TZ=Asia/Tokyo
     depends_on:
       - backend
 
@@ -32,6 +37,7 @@ services:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=attendance_pass
       - POSTGRES_DB=attendance_system
+      - TZ=Asia/Tokyo
     ports:
       - "5433:5432"
     volumes:
@@ -42,12 +48,11 @@ services:
     environment:
       - PGADMIN_DEFAULT_EMAIL=admin@admin.com
       - PGADMIN_DEFAULT_PASSWORD=admin
+      - TZ=Asia/Tokyo
     ports:
       - "8080:80"
-    depends_on:
-      - db
     volumes:
-      - pgadmin_data:/var/lib/pgadmin # 映射 pgAdmin 数据卷
+      - pgadmin_data:/var/lib/pgadmin
 
 # 4. 在底部统一声明
 volumes:

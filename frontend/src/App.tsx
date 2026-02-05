@@ -29,10 +29,17 @@ const Header = () => {
                     </h1>
                 </div>
                 <nav className="hidden md:flex items-center gap-8">
-                    <Link to="/" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">Dashboard</Link>
-                    <Link to="/attendance/list" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">例外リスト</Link>
+                    {user?.role !== 'viewer' && (
+                        <>
+                            <Link to="/" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">Dashboard</Link>
+                            <Link to="/attendance/list" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">例外リスト</Link>
+                        </>
+                    )}
                     {(user?.role === 'admin' || user?.role === 'hr') && (
-                        <Link to="/employees" className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors border-l border-slate-200 pl-8">社員情報管理</Link>
+                        <>
+                            <Link to="/employees" className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors border-l border-slate-200 pl-8">社員情報管理</Link>
+                            <Link to="/scanner" className="ml-4 px-3 py-1 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-slate-700 transition-colors">Terminal Mode</Link>
+                        </>
                     )}
                     <div className="flex items-center gap-3 border-l border-slate-200 pl-8">
                         <div className="text-right">
@@ -53,18 +60,30 @@ const Header = () => {
     );
 };
 
+import { PunchQR } from './pages/PunchQR';
+import { ScannerTerminal } from './pages/ScannerTerminal';
+
 const AppContent: React.FC = () => {
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, user } = useAuth();
 
     return (
         <div className="min-h-screen premium-gradient-bg flex flex-col">
-            {isAuthenticated && <Header />}
+            {/* 扫码终端页面不显示 Header */}
+            {isAuthenticated && window.location.pathname !== '/scanner' && <Header />}
 
             <main className="flex-grow">
-                <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+                <div className={window.location.pathname === '/scanner' || window.location.pathname === '/punch-qr' ? "" : "max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8"}>
                     <Routes>
                         <Route path="/login" element={<Login />} />
-                        <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                        <Route path="/scanner" element={<ScannerTerminal />} />
+                        <Route path="/punch-qr" element={<ProtectedRoute><PunchQR /></ProtectedRoute>} />
+
+                        <Route path="/" element={
+                            <ProtectedRoute>
+                                {user?.role === 'viewer' ? <Navigate to="/punch-qr" replace /> : <Dashboard />}
+                            </ProtectedRoute>
+                        } />
+
                         <Route path="/attendance/list" element={<ProtectedRoute><AttendanceList /></ProtectedRoute>} />
                         <Route path="/employees" element={<ProtectedRoute><Employees /></ProtectedRoute>} />
                         <Route path="*" element={<Navigate to="/" replace />} />

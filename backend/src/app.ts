@@ -13,7 +13,7 @@ const app = express();
 app.use(json());
 app.use(cookieParser());
 app.use(cors({
-    origin: 'http://localhost:5173', // Vite default
+    origin: true, // Allow any origin for development testing
     credentials: true
 }));
 
