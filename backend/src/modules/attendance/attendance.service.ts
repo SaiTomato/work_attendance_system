@@ -26,12 +26,19 @@ export class AttendanceService {
      * 创建考勤记录，自动计算状态
      */
     async createAttendance(data: any): Promise<AttendanceRecord> {
-        // 1. 获取适用的规则
+        // 1. 获取员工档案和适用的规则
+        const employee = await prisma.employee.findUnique({
+            where: { employeeId: data.employeeId }
+        });
+
+        if (!employee) throw new Error('Employee not found');
+
         const rule = await this.getApplicableRule(data.employeeId);
 
         // 2. 自动计算状态 (如果没有手动指定状态)
-        if (!data.status && data.checkInTime) {
-            data.status = AttendanceEngine.calculateStatus(new Date(data.checkInTime), rule);
+        if (!data.status) {
+            const checkInDate = data.checkInTime ? new Date(data.checkInTime) : null;
+            data.status = AttendanceEngine.calculateStatus(checkInDate, rule, employee);
         }
 
         return await attendanceRepo.createAttendance(data, data.operator || 'SYSTEM');

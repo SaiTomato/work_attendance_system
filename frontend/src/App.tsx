@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import { AttendanceList } from './pages/AttendanceList';
+import Employees from './pages/Employees';
 import Login from './pages/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
@@ -29,7 +30,10 @@ const Header = () => {
                 </div>
                 <nav className="hidden md:flex items-center gap-8">
                     <Link to="/" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">Dashboard</Link>
-                    <Link to="/attendance/list" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">Exception List</Link>
+                    <Link to="/attendance/list" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">例外リスト</Link>
+                    {(user?.role === 'admin' || user?.role === 'hr') && (
+                        <Link to="/employees" className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors border-l border-slate-200 pl-8">社員情報管理</Link>
+                    )}
                     <div className="flex items-center gap-3 border-l border-slate-200 pl-8">
                         <div className="text-right">
                             <p className="text-xs font-bold text-slate-900 uppercase tracking-wider">{user?.username}</p>
@@ -62,6 +66,7 @@ const AppContent: React.FC = () => {
                         <Route path="/login" element={<Login />} />
                         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                         <Route path="/attendance/list" element={<ProtectedRoute><AttendanceList /></ProtectedRoute>} />
+                        <Route path="/employees" element={<ProtectedRoute><Employees /></ProtectedRoute>} />
                         <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                 </div>

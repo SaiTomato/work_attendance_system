@@ -129,22 +129,40 @@ export class AttendanceRepo {
     async getDailyStats(date: Date): Promise<DailyStats> {
         const dateStr = date.toISOString().split('T')[0];
 
-        const [total, present, late, absent, leave] = await Promise.all([
-            prisma.employee.count({ where: { deletedAt: null } }),
+        // 仅统计在职 (ACTIVE) 且未被软删除的员工
+        const total = await prisma.employee.count({
+            where: {
+                status: 'ACTIVE',
+                deletedAt: null
+            }
+        });
+
+        // 统计各项状态数量 (已存在记录的)
+        const [presentCount, lateCount, recordedAbsent, leaveCount, wfhCount, worksiteCount] = await Promise.all([
             prisma.attendance.count({ where: { date: dateStr, status: 'present', deletedAt: null } }),
             prisma.attendance.count({ where: { date: dateStr, status: 'late', deletedAt: null } }),
             prisma.attendance.count({ where: { date: dateStr, status: 'absent', deletedAt: null } }),
             prisma.attendance.count({ where: { date: dateStr, status: 'leave', deletedAt: null } }),
+            prisma.attendance.count({ where: { date: dateStr, status: 'wfh', deletedAt: null } }),
+            prisma.attendance.count({ where: { date: dateStr, status: 'worksite', deletedAt: null } }),
         ]);
+
+        // 计算逻辑：
+        // 1. 出勤人数 = 正常 + 居家 + 现场
+        // 2. 缺勤人数 = 总人数 - (正常 + 迟到 + 居家 + 现场 + 请假)
+        //    如果没有打卡且没有请假，默认视为缺勤
+        const activePresent = presentCount + wfhCount + worksiteCount;
+        const totalAccounted = activePresent + lateCount + leaveCount;
+        const calculatedAbsent = Math.max(0, total - totalAccounted);
 
         return {
             date: dateStr,
             totalEmployees: total,
-            present,
-            late,
-            absent,
-            leave,
-            exceptions: late + absent
+            present: activePresent,
+            late: lateCount,
+            absent: calculatedAbsent || recordedAbsent, // 优先使用计算值，如果没有则使用记录值
+            leave: leaveCount,
+            exceptions: lateCount + (calculatedAbsent || recordedAbsent)
         };
     }
 

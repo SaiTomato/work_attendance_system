@@ -1,4 +1,3 @@
-
 import { Request } from 'express';
 
 // Extend Express Request
@@ -10,12 +9,22 @@ declare global {
     }
 }
 
+export type UserRole = 'admin' | 'manager' | 'hr' | 'viewer';
+
 export interface UserPayload {
     id: string;
     username: string;
-    role: 'admin' | 'manager' | 'hr' | 'viewer';
-    departmentId?: string; // Critical for manager role (Skill: rbac-check)
+    role: UserRole;
+    departmentId?: string;
 }
+
+// 对应 Prisma Schema 的职位枚举
+export type Position = 'STAFF' | 'SUB_MANAGER' | 'MANAGER' | 'GENERAL_AFFAIRS' | 'CEO';
+
+// 对应 Prisma Schema 的状态枚举
+export type EmployeeStatus = 'PROSPECTIVE' | 'ACTIVE' | 'ON_LEAVE' | 'RESIGNED' | 'TERMINATED';
+
+export type WorkLocation = 'OFFICE' | 'REMOTE' | 'WORKSITE';
 
 export interface DailyStats {
     date: string;
@@ -32,17 +41,20 @@ export interface AttendanceRecord {
     employeeId: string;
     employeeName: string;
     date: string;
-    status: 'present' | 'late' | 'absent' | 'leave' | 'business_trip';
+    status: string; // 'present', 'late', 'absent', 'leave', 'wfh', 'worksite'
     checkInTime?: string;
     checkOutTime?: string;
 }
 
-export interface AuditLog {
+export interface EmployeeProfile {
     id: string;
-    targetId: string;
-    action: 'create' | 'update' | 'delete' | 'override';
-    before?: any;
-    after?: any;
-    operatedBy: string;
-    operatedAt: string;
+    employeeId: string;
+    name: string;
+    position: Position;
+    status: EmployeeStatus;
+    workLocation: WorkLocation;
+    departmentName?: string;
+    hireDate?: string;
+    leaveEndDate?: string;
+    locationEndDate?: string;
 }

@@ -36,13 +36,10 @@ export async function revokeRefreshToken(
       where: {
         userId,
         tokenHash,
-        revoked: false,
-        expiresAt: {
-          gt: new Date(),
-        },
+        revokedAt: null, // 仅撤销尚未撤销的
       },
       data: {
-        revoked: true,
+        revokedAt: new Date(),
       },
     });
 

@@ -5,6 +5,8 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import attendanceRoutes from './routes/attendance.routes';
 import authRoutes from './routes/auth.routes';
+import employeeRoutes from './routes/employees.routes';
+import departmentRoutes from './routes/department.routes';
 
 const app = express();
 
@@ -24,6 +26,8 @@ app.use((req, res, next) => {
 // Routes - match what frontend expects
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/employees', employeeRoutes);
+app.use('/api/departments', departmentRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

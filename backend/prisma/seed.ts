@@ -1,160 +1,162 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Position, EmployeeStatus, WorkLocation } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
-    console.log('🌱 正在初始化考勤系统种子数据...');
+    console.log('🌱 正在初始化考勤系统高级测试数据...');
 
-    // ⏳ 数据库连接重试逻辑
-    let retries = 5;
-    while (retries > 0) {
-        try {
-            await prisma.$connect();
-            break;
-        } catch (e) {
-            console.log(`⏳ 数据库连接中... (剩余重试: ${retries})`);
-            retries--;
-            await new Promise(res => setTimeout(res, 2000));
-        }
-    }
-
-    // --- 1. 创建考勤规则 (AttendanceRule) ---
-    console.log('  - 创建考勤规则...');
-    const defaultRule = await prisma.attendanceRule.upsert({
-        where: { id: 'default-rule-id' }, // 使用固定 ID 方便测试
-        update: {},
-        create: {
-            id: 'default-rule-id',
-            name: '标准办公室工时',
-            standardCheckIn: '09:00',
-            standardCheckOut: '18:00',
-            lateGracePeriod: 5,
-            absentThreshold: 120,
-            isDefault: true,
-        }
-    });
-
-    const itRule = await prisma.attendanceRule.upsert({
-        where: { id: 'it-rule-id' },
-        update: {},
-        create: {
-            id: 'it-rule-id',
-            name: 'IT部弹性工时',
-            standardCheckIn: '10:00',
-            standardCheckOut: '19:00',
-            lateGracePeriod: 15,
-            absentThreshold: 180,
-            isDefault: false,
-        }
-    });
-
-    // --- 2. 创建部门 (Department) ---
-    console.log('  - 创建部门...');
+    // --- 1. 创建部门 ---
+    console.log('  - 创建部门 (TECH, HR, SALES, GEN)...');
     const deptTech = await prisma.department.upsert({
-        where: { code: 'TECH' },
-        update: {},
-        create: {
-            name: '技术部',
-            code: 'TECH',
-            description: 'Responsible for software development',
-        }
+        where: { code: 'TECH' }, update: {},
+        create: { name: '技术部', code: 'TECH', description: 'Software and Infrastructure' }
     });
-
     const deptHR = await prisma.department.upsert({
-        where: { code: 'HR' },
-        update: {},
-        create: {
-            name: '人事部',
-            code: 'HR',
-            description: 'Human resources and recruitment',
-        }
+        where: { code: 'HR' }, update: {},
+        create: { name: '人事部', code: 'HR' }
+    });
+    const deptSales = await prisma.department.upsert({
+        where: { code: 'SALES' }, update: {},
+        create: { name: '销售部', code: 'SALES' }
+    });
+    const deptGen = await prisma.department.upsert({
+        where: { code: 'GEN' }, update: {},
+        create: { name: '总务部', code: 'GEN' }
     });
 
-    // 为 IT 部绑定 IT 特殊规则 (演示级关联)
-    await prisma.attendanceRule.update({
-        where: { id: itRule.id },
-        data: { departmentId: deptTech.id }
-    });
-
-    // --- 3. 创建账号 (User) ---
-    console.log('  - 创建系统账号...');
-    const hashedAdminPassword = await bcrypt.hash('admin', 10);
-    const hashedUserPassword = await bcrypt.hash('password123', 10);
+    // --- 2. 创建系统账号 (User) ---
+    console.log('  - 创建系统账号 (admin, chief, alice)...');
+    const hashedPass = await bcrypt.hash('admin123', 10);
 
     const adminUser = await prisma.user.upsert({
-        where: { username: 'admin' },
-        update: {},
-        create: {
-            username: 'admin',
-            password: hashedAdminPassword,
-            role: 'admin',
-        },
+        where: { username: 'admin' }, update: {},
+        create: { username: 'admin', password: hashedPass, role: 'admin' }
+    });
+
+    const chiefUser = await prisma.user.upsert({
+        where: { username: 'chief' }, update: {},
+        create: { username: 'chief', password: hashedPass, role: 'manager', departmentId: deptTech.id }
     });
 
     const aliceUser = await prisma.user.upsert({
-        where: { username: 'alice' },
-        update: {},
-        create: {
-            username: 'alice',
-            password: hashedUserPassword,
-            role: 'viewer',
-            departmentId: deptTech.id
-        },
+        where: { username: 'alice' }, update: {},
+        create: { username: 'alice', password: hashedPass, role: 'viewer', departmentId: deptTech.id }
     });
 
-    // --- 4. 创建员工并关联账号 (Employee) ---
-    console.log('  - 创建员工档案...');
-    const alice = await prisma.employee.upsert({
-        where: { employeeId: 'EMP-001' },
-        update: {},
+    // --- 3. 创建员工档案 (含职位与状态) ---
+    console.log('  - 创建多元化员工档案...');
+
+    // 社长 (CEO)
+    await prisma.employee.upsert({
+        where: { employeeId: 'EMP-000' }, update: {},
+        create: {
+            employeeId: 'EMP-000',
+            name: '山田 太郎',
+            position: Position.CEO,
+            status: EmployeeStatus.ACTIVE,
+            hireDate: new Date('2020-01-01'),
+            departmentId: deptGen.id,
+        }
+    });
+
+    // 技术部长 (MANAGER)
+    const chiefEmp = await prisma.employee.upsert({
+        where: { employeeId: 'EMP-001' }, update: {},
         create: {
             employeeId: 'EMP-001',
-            name: 'Alice Chang',
+            name: 'Chief Officer',
+            position: Position.MANAGER,
+            status: EmployeeStatus.ACTIVE,
+            hireDate: new Date('2022-05-15'),
             departmentId: deptTech.id,
-            userId: aliceUser.id,
-        },
+            userId: chiefUser.id
+        }
     });
 
-    const bob = await prisma.employee.upsert({
-        where: { employeeId: 'EMP-002' },
-        update: {},
+    // 员工 Alice
+    await prisma.employee.upsert({
+        where: { employeeId: 'ALICE-001' }, update: {},
+        create: {
+            employeeId: 'ALICE-001',
+            name: 'Alice Chang',
+            position: Position.STAFF,
+            status: EmployeeStatus.ACTIVE,
+            hireDate: new Date('2023-01-10'),
+            departmentId: deptTech.id,
+            userId: aliceUser.id
+        }
+    });
+
+    // 居家办公的员工 (REMOTE)
+    await prisma.employee.upsert({
+        where: { employeeId: 'EMP-002' }, update: {},
         create: {
             employeeId: 'EMP-002',
             name: 'Bob Wang',
-            departmentId: deptHR.id,
-        },
+            position: Position.STAFF,
+            status: EmployeeStatus.ACTIVE,
+            workLocation: WorkLocation.REMOTE,
+            locationStartDate: new Date(),
+            departmentId: deptTech.id,
+        }
     });
 
-    // --- 5. 创建考勤记录 (Attendance) ---
-    console.log('  - 创建考勤流水...');
-    const today = new Date().toISOString().split('T')[0];
+    // 正在休假的员工 (ON_LEAVE)
+    await prisma.employee.upsert({
+        where: { employeeId: 'EMP-003' }, update: {},
+        create: {
+            employeeId: 'EMP-003',
+            name: 'Charlie Li',
+            position: Position.STAFF,
+            status: EmployeeStatus.ON_LEAVE,
+            leaveStartDate: new Date('2026-02-01'),
+            leaveEndDate: new Date('2026-02-28'),
+            departmentId: deptHR.id,
+        }
+    });
 
-    // 清理一下今天的旧数据，防止重复执行报错
+    // --- 4. 考勤规则 (AttendanceRule) ---
+    console.log('  - 创建默认考勤规则...');
+    await prisma.attendanceRule.upsert({
+        where: { id: 'default-rule-id' }, update: {},
+        create: {
+            id: 'default-rule-id',
+            name: '标准上班时间',
+            standardCheckIn: '09:00',
+            standardCheckOut: '18:00',
+            isDefault: true
+        }
+    });
+
+    // --- 5. 考勤记录 ---
+    console.log('  - 创建今日考勤快照...');
+    const today = new Date().toISOString().split('T')[0];
     await prisma.attendance.deleteMany({ where: { date: today } });
 
     await prisma.attendance.createMany({
         data: [
             {
-                employeeId: alice.employeeId,
-                employeeName: alice.name,
+                employeeId: 'EMP-001',
+                employeeName: 'Chief Officer',
                 date: today,
                 status: 'present',
                 checkInTime: new Date(new Date().setHours(8, 55, 0)),
             },
             {
-                employeeId: bob.employeeId,
-                employeeName: bob.name,
+                employeeId: 'EMP-002',
+                employeeName: 'Bob Wang',
                 date: today,
-                status: 'late',
-                checkInTime: new Date(new Date().setHours(9, 45, 0)),
-            },
-        ],
+                status: 'wfh',
+                checkInTime: new Date(new Date().setHours(10, 0, 0)),
+            }
+        ]
     });
 
     console.log('✅ 考勤系统初始化成功！');
-    console.log('   - 默认管理员: admin / admin');
-    console.log('   - 测试账号: alice / password123');
+    console.log('   - 管理员账号: admin / admin123');
+    console.log('   - 经理账号: chief / admin123');
+    console.log('   - 员工账号: alice / admin123');
 }
 
 main()
