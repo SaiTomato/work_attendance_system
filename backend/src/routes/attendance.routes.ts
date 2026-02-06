@@ -32,8 +32,8 @@ const validate = (req: Request, res: Response, next: any) => {
     next();
 };
 
-// 1. 生成打卡 Token (员工手机端调用)
-router.get('/token', async (req: Request, res: Response) => {
+// 1. 生成打卡 Token (员工手机端调用 - 禁止终端账号调用)
+router.get('/token', requireRole(['admin', 'manager', 'hr', 'viewer']), async (req: Request, res: Response) => {
     try {
         const user = await prisma.user.findUnique({
             where: { id: req.user?.id },
@@ -53,8 +53,8 @@ router.get('/token', async (req: Request, res: Response) => {
     }
 });
 
-// 2. 扫描 Token 并打卡 (扫码端调用)
-router.post('/scan', async (req: Request, res: Response) => {
+// 2. 扫描 Token 并打卡 (仅限终端设备或管理员)
+router.post('/scan', requireRole(['terminal', 'admin']), async (req: Request, res: Response) => {
     try {
         const { token } = req.body;
         if (!token) return errorResponse(res, 'Token missing', 400);
@@ -86,8 +86,8 @@ router.post('/scan', async (req: Request, res: Response) => {
     }
 });
 
-// 3. 自助打卡 (遗留按钮接口，可选保留用于测试)
-router.post('/punch', async (req: Request, res: Response) => {
+// 3. 自助打卡 (遗留按钮接口 - 禁止终端账号)
+router.post('/punch', requireRole(['admin', 'manager', 'hr', 'viewer']), async (req: Request, res: Response) => {
     try {
         // 通过关联的 User 找到对应的 EmployeeID
         const user = await prisma.user.findUnique({
@@ -142,8 +142,8 @@ router.put('/:id', requireRole(['admin', 'hr']), updateAttendanceValidator, vali
     }
 });
 
-// 4. 统计数据
-router.get('/dashboard/stats', async (req: Request, res: Response) => {
+// 4. 统计数据 (管理层权限)
+router.get('/dashboard/stats', requireRole(['admin', 'manager', 'hr']), async (req: Request, res: Response) => {
     try {
         const stats = await attendanceService.getDashboardStats();
         successResponse(res, stats);
@@ -152,8 +152,8 @@ router.get('/dashboard/stats', async (req: Request, res: Response) => {
     }
 });
 
-// 5. 异常列表
-router.get('/exceptions', async (req: Request, res: Response) => {
+// 5. 异常列表 (管理层权限)
+router.get('/exceptions', requireRole(['admin', 'manager', 'hr']), async (req: Request, res: Response) => {
     try {
         const date = req.query.date as string;
         const list = await attendanceService.getExceptionList(date);
@@ -163,18 +163,36 @@ router.get('/exceptions', async (req: Request, res: Response) => {
     }
 });
 
-// 6. 个人历史
+// 6. 个人历史 (本人或管理层)
 router.get('/history/:employeeId', async (req: Request, res: Response) => {
     try {
-        const history = await attendanceService.getEmployeeHistory(req.params.employeeId);
+        const targetEmployeeId = req.params.employeeId;
+
+        // 如果是普通员工，校验是否是看自己的
+        if (req.user?.role === 'viewer') {
+            const user = await prisma.user.findUnique({
+                where: { id: req.user.id },
+                include: { employee: true }
+            });
+            if (user?.employee?.employeeId !== targetEmployeeId) {
+                return errorResponse(res, '权限不足：无法查看他人考勤记录', 403);
+            }
+        }
+
+        // 禁止终端账号查看任何历史
+        if (req.user?.role === 'terminal') {
+            return errorResponse(res, '权限不足：终端账号无法查看历史', 403);
+        }
+
+        const history = await attendanceService.getEmployeeHistory(targetEmployeeId);
         successResponse(res, history);
     } catch (error: any) {
         errorResponse(res, error.message);
     }
 });
 
-// 7. 审计日志
-router.get('/audit/:recordId', async (req: Request, res: Response) => {
+// 7. 审计日志 (Admin/HR 权限)
+router.get('/audit/:recordId', requireRole(['admin', 'hr']), async (req: Request, res: Response) => {
     try {
         const logs = await attendanceService.getAuditLogs(req.params.recordId);
         successResponse(res, logs);

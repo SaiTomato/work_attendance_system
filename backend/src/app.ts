@@ -7,6 +7,7 @@ import attendanceRoutes from './routes/attendance.routes';
 import authRoutes from './routes/auth.routes';
 import employeeRoutes from './routes/employees.routes';
 import departmentRoutes from './routes/department.routes';
+import leaveRoutes from './routes/leave.routes';
 
 const app = express();
 
@@ -31,6 +32,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/departments', departmentRoutes);
+app.use('/api/leave', leaveRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

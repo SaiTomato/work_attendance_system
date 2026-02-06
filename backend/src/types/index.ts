@@ -9,7 +9,7 @@ declare global {
     }
 }
 
-export type UserRole = 'admin' | 'manager' | 'hr' | 'viewer';
+export type UserRole = 'admin' | 'manager' | 'hr' | 'viewer' | 'terminal';
 
 export interface UserPayload {
     id: string;

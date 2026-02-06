@@ -119,6 +119,7 @@ model LeaveRequest {
   
   status       ApprovalStatus @default(PENDING)
   approvedBy   String?        // 审批人用户名
+  isReadByEmployee Boolean    @default(false) // 新增: 员工是否已查看结果
   
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
