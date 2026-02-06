@@ -73,9 +73,9 @@ router.post(
                 .status(200)
                 .cookie('refreshToken', refreshToken, {
                     httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
+                    secure: false, // 强制为 false 以支持 localhost/IP 的 HTTP 环境
                     sameSite: 'lax',
-                    path: '/api/auth',
+                    path: '/',
                     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
                 })
                 .json({
@@ -99,9 +99,8 @@ router.post(
     }
 );
 
-// 登出
 router.post('/logout', async (req: Request, res: Response) => {
-    const refreshToken = (req as any).cookies?.refreshToken;
+    const refreshToken = (req as any).cookies?.refreshToken || req.body.refreshToken;
 
     if (!refreshToken) {
         return res.status(200).json({
@@ -111,16 +110,15 @@ router.post('/logout', async (req: Request, res: Response) => {
     }
 
     try {
-        const decoded = verifyRefreshToken(refreshToken);
-        await revokeRefreshToken(decoded.id, refreshToken);
+        await revokeRefreshToken(refreshToken);
     } catch (err) {
-        // Ignore error on logout
+        console.error('Logout revocation failed:', err);
     }
 
     return res
         .status(200)
         .clearCookie('refreshToken', {
-            path: '/api/auth',
+            path: '/',
         })
         .json({
             success: true,
@@ -152,7 +150,7 @@ router.post(
             });
         }
 
-        const ok = await revokeRefreshToken(userId, refreshToken);
+        const ok = await revokeRefreshToken(refreshToken, userId);
         if (!ok) {
             return res.status(401).json({
                 success: false,
@@ -186,9 +184,9 @@ router.post(
         res
             .cookie('refreshToken', newRefreshToken, {
                 httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
+                secure: false, // 强制为 false
                 sameSite: 'lax',
-                path: '/api/auth',
+                path: '/',
                 maxAge: 7 * 24 * 60 * 60 * 1000,
             })
             .json({

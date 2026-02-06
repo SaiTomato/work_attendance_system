@@ -6,10 +6,20 @@ import Employees from './pages/Employees';
 import Login from './pages/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { isAuthenticated } = useAuth();
+const ProtectedRoute: React.FC<{ children: React.ReactNode, allowedRoles?: string[] }> = ({ children, allowedRoles }) => {
+    const { isAuthenticated, user } = useAuth();
     if (!isAuthenticated) {
         return <Navigate to="/login" replace />;
+    }
+    if (allowedRoles && user && !allowedRoles.includes(user.role)) {
+        // 如果角色不对，跳转到该角色的专属首页
+        if (user.role === 'terminal') return <Navigate to="/scanner" replace />;
+        if (user.role === 'viewer') return <Navigate to="/punch-qr" replace />;
+        // Fallback for other roles not explicitly handled or not allowed
+        // The original code had a fallback to '/', which is a reasonable default.
+        // The instruction implies a change to the fallback, but the provided snippet is garbled.
+        // Sticking to the original fallback to '/' for roles not allowed.
+        return <Navigate to="/" replace />;
     }
     return <>{children}</>;
 };
@@ -29,17 +39,19 @@ const Header = () => {
                     </h1>
                 </div>
                 <nav className="hidden md:flex items-center gap-8">
-                    {user?.role !== 'viewer' && (
+                    {/* 只有管理层 (admin, manager, hr) 才能看到这些链接 */}
+                    {['admin', 'manager', 'hr'].includes(user?.role || '') && (
                         <>
                             <Link to="/" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">Dashboard</Link>
                             <Link to="/attendance/list" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">例外リスト</Link>
                         </>
                     )}
                     {(user?.role === 'admin' || user?.role === 'hr') && (
-                        <>
-                            <Link to="/employees" className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors border-l border-slate-200 pl-8">社員情報管理</Link>
-                            <Link to="/scanner" className="ml-4 px-3 py-1 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-slate-700 transition-colors">Terminal Mode</Link>
-                        </>
+                        <Link to="/employees" className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors border-l border-slate-200 pl-8">社員情報管理</Link>
+                    )}
+                    {/* 只有扫码终端和管理员可见 Terminal Mode */}
+                    {(user?.role === 'admin' || user?.role === 'terminal') && (
+                        <Link to="/scanner" className="ml-4 px-3 py-1 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-slate-700 transition-colors">Terminal Mode</Link>
                     )}
                     <div className="flex items-center gap-3 border-l border-slate-200 pl-8">
                         <div className="text-right">
@@ -68,24 +80,37 @@ const AppContent: React.FC = () => {
 
     return (
         <div className="min-h-screen premium-gradient-bg flex flex-col">
-            {/* 扫码终端页面不显示 Header */}
-            {isAuthenticated && window.location.pathname !== '/scanner' && <Header />}
+            {/* 扫码终端页面以及终端账号都不显示 Header */}
+            {isAuthenticated && user?.role !== 'terminal' && window.location.pathname !== '/scanner' && <Header />}
 
             <main className="flex-grow">
                 <div className={window.location.pathname === '/scanner' || window.location.pathname === '/punch-qr' ? "" : "max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8"}>
                     <Routes>
                         <Route path="/login" element={<Login />} />
-                        <Route path="/scanner" element={<ScannerTerminal />} />
+                        <Route path="/scanner" element={
+                            <ProtectedRoute allowedRoles={['admin', 'terminal']}>
+                                <ScannerTerminal />
+                            </ProtectedRoute>
+                        } />
                         <Route path="/punch-qr" element={<ProtectedRoute><PunchQR /></ProtectedRoute>} />
 
                         <Route path="/" element={
-                            <ProtectedRoute>
-                                {user?.role === 'viewer' ? <Navigate to="/punch-qr" replace /> : <Dashboard />}
+                            <ProtectedRoute allowedRoles={['admin', 'manager', 'hr']}>
+                                <Dashboard />
                             </ProtectedRoute>
                         } />
 
-                        <Route path="/attendance/list" element={<ProtectedRoute><AttendanceList /></ProtectedRoute>} />
-                        <Route path="/employees" element={<ProtectedRoute><Employees /></ProtectedRoute>} />
+                        <Route path="/attendance/list" element={
+                            <ProtectedRoute allowedRoles={['admin', 'manager', 'hr']}>
+                                <AttendanceList />
+                            </ProtectedRoute>
+                        } />
+
+                        <Route path="/employees" element={
+                            <ProtectedRoute allowedRoles={['admin']}>
+                                <Employees />
+                            </ProtectedRoute>
+                        } />
                         <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                 </div>

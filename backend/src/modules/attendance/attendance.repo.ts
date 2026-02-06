@@ -33,19 +33,36 @@ export class AttendanceRepo {
         const recordMap = new Map();
         records.forEach(r => recordMap.set(r.employeeId, r));
 
-        // 3. 获取通用规则
-        const rule = await prisma.attendanceRule.findFirst({ where: { isDefault: true } });
-        const [inH, inM] = (rule?.standardCheckIn || '09:00').split(':').map(Number);
+        // 3. 获取通用规则与节假日信息
+        const [rule, holiday] = await Promise.all([
+            (prisma as any).attendanceRule.findFirst({ where: { isDefault: true } }),
+            (prisma as any).holiday.findUnique({ where: { date: dateStr } })
+        ]);
+
+        // 如果是节假日且不是补班日，全员默认不产生“缺勤”异常
+        const isNonWorkingDay = (holiday && !holiday.isWorkday) || (!holiday && (now.getDay() === 0 || now.getDay() === 6));
+
+        const [stdH, stdM] = (rule?.standardCheckIn || '09:00').split(':').map(Number);
         const [outH, outM] = (rule?.standardCheckOut || '18:00').split(':').map(Number);
 
         const inDeadline = new Date(now);
-        inDeadline.setHours(inH, inM, 0, 0);
+        inDeadline.setHours(stdH, stdM, 0, 0);
 
         const outTime = new Date(now);
         outTime.setHours(outH, outM, 0, 0);
 
         const maxOvertime = rule?.maxOvertimeHours || 3;
         const outGraceDeadline = new Date(outTime.getTime() + maxOvertime * 60 * 60 * 1000);
+
+        // 获取今日所有已审批的请假申请
+        const approvedLeaves = await (prisma as any).leaveRequest.findMany({
+            where: {
+                status: 'APPROVED',
+                startDate: { lte: now },
+                endDate: { gte: now }
+            }
+        });
+        const leaveMap = new Set(approvedLeaves.map((l: any) => l.employeeId));
 
         const exceptionList: AttendanceRecord[] = [];
 
@@ -55,14 +72,14 @@ export class AttendanceRepo {
 
             if (!r) {
                 // 情况：今天还没来打过卡
-                // 如果当前时间已经过了上班点，判定为缺勤异常
-                if (now > inDeadline) {
+                // 如果是工作日且过了上班点，且没有请假 -> 判定为缺勤异常
+                if (!isNonWorkingDay && now > inDeadline && !leaveMap.has(emp.employeeId)) {
                     exceptionList.push({
-                        id: `missing-${emp.employeeId}`, // 虚拟ID
+                        id: `missing-${emp.employeeId}`,
                         employeeId: emp.employeeId,
                         employeeName: emp.name,
                         date: dateStr,
-                        status: 'absent', // 动态判定为缺勤
+                        status: 'absent',
                     } as any);
                 }
             } else {
@@ -88,7 +105,6 @@ export class AttendanceRepo {
             }
         });
 
-        // 按时间倒序
         return exceptionList.sort((a, b) => b.employeeId.localeCompare(a.employeeId));
     }
 
@@ -208,7 +224,7 @@ export class AttendanceRepo {
                 ],
                 deletedAt: null
             },
-            select: { id: true, status: true }
+            select: { employeeId: true, status: true }
         });
 
         const totalCount = totalEmployees.length;
@@ -222,7 +238,7 @@ export class AttendanceRepo {
         const defaultRule = await prisma.attendanceRule.findFirst({ where: { isDefault: true } });
         const [inH, inM] = (defaultRule?.standardCheckIn || '09:00').split(':').map(Number);
         const [outH, outM] = (defaultRule?.standardCheckOut || '18:00').split(':').map(Number);
-        const [startH, startM] = (defaultRule?.allowedCheckInStart || '05:00').split(':').map(Number);
+        const [startH, startM] = '05:00'.split(':').map(Number);
         const maxOvertime = defaultRule?.maxOvertimeHours || 3;
 
         const allowedStart = new Date(now);
@@ -272,20 +288,29 @@ export class AttendanceRepo {
             }
         });
 
-        // 5. 计算尚未出现在考勤表中的员工
-        const profileLeaveCount = totalEmployees.filter(e => e.status === 'ON_LEAVE').length;
-        const finalLeave = Math.max(leaveRecordsCnt, profileLeaveCount);
+        // 5. 计算尚未出现在考勤表中的员工 (排除请假和节假日)
+        const [holiday, approvedLeaves] = await Promise.all([
+            (prisma as any).holiday.findUnique({ where: { date: dateStr } }),
+            (prisma as any).leaveRequest.findMany({
+                where: {
+                    status: 'APPROVED',
+                    startDate: { lte: now },
+                    endDate: { gte: now }
+                }
+            })
+        ]);
 
-        // 计算还没打卡的活动员工数
-        const missingCount = Math.max(0, totalCount - (processedIds.size + (profileLeaveCount - records.filter(r => r.status === 'leave' && totalEmployees.find(e => e.id === r.employeeId)?.status === 'ON_LEAVE').length)));
+        const isNonWorkingDay = (holiday && !holiday.isWorkday) || (!holiday && (now.getDay() === 0 || now.getDay() === 6));
+        const leaveMap = new Set(approvedLeaves.map((l: any) => l.employeeId));
 
-        let unattended = 0;
-        if (now < inDeadline) {
-            // 在上班之前没打卡的，计入“待命/未出席”
-            unattended = missingCount;
-        } else {
-            // 超过时间没打卡的，直接计入异常
-            exceptions += missingCount;
+        // 真正应出席但没打卡的人 (且没请假，不是休息日)
+        let missingExceptions = 0;
+        if (!isNonWorkingDay && now > inDeadline) {
+            totalEmployees.forEach(emp => {
+                if (!processedIds.has(emp.employeeId) && !leaveMap.has(emp.employeeId)) {
+                    missingExceptions++;
+                }
+            });
         }
 
         return {
@@ -293,11 +318,11 @@ export class AttendanceRepo {
             totalEmployees: totalCount,
             present,
             late,
-            absent: missingCount,
-            leave: finalLeave,
-            unattended,
+            absent: missingExceptions,
+            leave: leaveMap.size,
+            unattended: now < inDeadline ? (totalCount - processedIds.size - leaveMap.size) : 0,
             successOut,
-            exceptions
+            exceptions: exceptions + missingExceptions
         } as any;
     }
 
@@ -338,7 +363,23 @@ export class AttendanceRepo {
         const now = new Date();
         const dateStr = now.toISOString().split('T')[0];
 
-        // 1. 获取规则
+        // 1. 获取规则与节假日信息
+        const [holiday, approvedLeave] = await Promise.all([
+            (prisma as any).holiday.findUnique({ where: { date: dateStr } }),
+            (prisma as any).leaveRequest.findFirst({
+                where: {
+                    employeeId,
+                    status: 'APPROVED',
+                    startDate: { lte: now },
+                    endDate: { gte: now }
+                }
+            })
+        ]);
+
+        // 如果是休息日且没补班，或者已经请假获批 -> 不存在异常（放行）
+        const isNonWorkingDay = (holiday && !holiday.isWorkday) || (!holiday && (now.getDay() === 0 || now.getDay() === 6));
+        if (isNonWorkingDay || approvedLeave) return null;
+
         const employee = await prisma.employee.findUnique({
             where: { employeeId },
             include: {

@@ -26,8 +26,8 @@ export async function storeRefreshToken(
 }
 
 export async function revokeRefreshToken(
-  userId: string,
-  refreshToken: string
+  refreshToken: string,
+  userId?: string
 ): Promise<boolean> {
   try {
     const tokenHash = hashToken(refreshToken);
@@ -36,7 +36,7 @@ export async function revokeRefreshToken(
       where: {
         userId,
         tokenHash,
-        revokedAt: null, // 仅撤销尚未撤销的
+        revokedAt: null,
       },
       data: {
         revokedAt: new Date(),

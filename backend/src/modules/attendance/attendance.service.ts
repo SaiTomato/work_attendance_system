@@ -52,6 +52,38 @@ export class AttendanceService {
     }
 
     async updateAttendance(id: string, status: string, operator: string, reason: string): Promise<void> {
+        // 1. 处理虚拟 ID (例如: missing-EMP001)
+        if (id.startsWith('missing-')) {
+            const employeeId = id.replace('missing-', '');
+            const date = new Date().toISOString().split('T')[0];
+
+            // 获取员工信息用于补录
+            const employee = await prisma.employee.findUnique({ where: { employeeId } });
+            if (!employee) throw new Error('Employee not found');
+
+            // 如果管理员将其修正为 "正常"，则自动补全上班时间 (否则扫码端依然会拦截)
+            let checkInTime = null;
+            if (status === 'present' || status === 'late') {
+                const rule = await this.getApplicableRule(employeeId);
+                const [h, m] = rule.standardCheckIn.split(':').map(Number);
+                const baseDate = new Date();
+                baseDate.setHours(h, m, 0, 0);
+                checkInTime = baseDate;
+            }
+
+            await attendanceRepo.createAttendance({
+                employeeId,
+                employeeName: employee.name,
+                date,
+                status,
+                checkInTime,
+                operator
+            }, operator);
+            
+            return;
+        }
+
+        // 2. 原有的更新逻辑
         await attendanceRepo.updateAttendance(id, status, operator, reason);
     }
 

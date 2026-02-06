@@ -1,4 +1,4 @@
-
+import 'dotenv/config';
 import express from 'express';
 import { json } from 'body-parser';
 import cookieParser from 'cookie-parser';
@@ -13,7 +13,10 @@ const app = express();
 app.use(json());
 app.use(cookieParser());
 app.use(cors({
-    origin: true, // Allow any origin for development testing
+    origin: (origin, callback) => {
+        // 允许任何来源以便于局域网调试，同时支持 credentials
+        callback(null, true);
+    },
     credentials: true
 }));
 

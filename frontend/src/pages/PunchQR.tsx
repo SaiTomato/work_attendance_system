@@ -7,7 +7,7 @@ export const PunchQR: React.FC = () => {
     const [tokenData, setTokenData] = useState<{ token: string, expiresAt: number } | null>(null);
     const [timeLeft, setTimeLeft] = useState(30);
     const [error, setError] = useState<string | null>(null);
-    const { user } = useAuth();
+    const { user, logout } = useAuth();
 
     const getToken = async () => {
         try {
@@ -84,14 +84,26 @@ export const PunchQR: React.FC = () => {
                 )}
 
                 <div className="mt-10 pt-6 border-t border-slate-100 w-full">
-                    <div className="flex items-center justify-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold">
-                            {user?.username.charAt(0).toUpperCase()}
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold">
+                                {user?.username.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="text-left">
+                                <p className="text-sm font-bold text-slate-900">{user?.username}</p>
+                                <p className="text-[10px] text-slate-400 uppercase tracking-tighter">{user?.role} Mode</p>
+                            </div>
                         </div>
-                        <div className="text-left">
-                            <p className="text-sm font-bold text-slate-900">{user?.username}</p>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-tighter">{user?.role} Mode Activated</p>
-                        </div>
+                        <button
+                            onClick={() => logout()}
+                            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-all group"
+                            title="退出登录"
+                        >
+                            <span className="text-[10px] font-bold uppercase tracking-widest hidden group-hover:inline">Sign Out</span>
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            </svg>
+                        </button>
                     </div>
                 </div>
             </div>

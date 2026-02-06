@@ -4,7 +4,7 @@ import { authService } from '../services/authService';
 interface AuthUser {
   id: string;
   username: string;
-  role: 'admin' | 'manager' | 'hr' | 'viewer';
+  role: 'admin' | 'manager' | 'hr' | 'viewer' | 'terminal';
 }
 
 interface AuthContextType {

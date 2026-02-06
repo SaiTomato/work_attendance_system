@@ -12,6 +12,8 @@ services:
       - DATABASE_URL=postgresql://admin:attendance_pass@db:5432/attendance_system?schema=public
       - PORT=3000
       - TZ=Asia/Tokyo
+      - JWT_SECRET_ACCESS=your_access_token_secret_here
+      - JWT_SECRET_REFRESH=your_refresh_token_secret_here
     depends_on:
       - db
 

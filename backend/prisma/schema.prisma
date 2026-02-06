@@ -14,6 +14,7 @@ enum UserRole {
   manager
   hr
   viewer
+  terminal
 }
 
 // 职位定义 (Requirement 2)
@@ -71,14 +72,8 @@ model Employee {
   hireDate        DateTime?   // 入职日期
   terminationDate DateTime?   // 离职/开除日期
   
-  // 休假期限管理 (Requirement 1)
-  leaveStartDate  DateTime?
-  leaveEndDate    DateTime?   // 如果为空，则一直保持 ON_LEAVE 除非手动修改
-  
   // 工作地点管理 (Requirement 3)
   workLocation      WorkLocation @default(OFFICE)
-  locationStartDate DateTime?
-  locationEndDate   DateTime?     // 期限逻辑同上
   
   // 关联属性
   departmentId String
@@ -87,13 +82,57 @@ model Employee {
   userId       String?    @unique
   user         User?      @relation(fields: [userId], references: [id])
   
-  attendance   Attendance[]
-  rules        AttendanceRule[] // 个人特殊规则
-  auditLogs    AuditLog[]       // 员工档案变动日志
+  attendance    Attendance[]
+  leaveRequests LeaveRequest[]  // 新增: 请假申请
+  rules         AttendanceRule[] // 个人特殊规则
+  auditLogs     AuditLog[]       // 员工档案变动日志
 
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?
+}
+
+// --- 新增: 审批流模型 ---
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum LeaveType {
+  ANNUAL    // 年假
+  SICK      // 病假
+  SPECIAL   // 特别假
+  BUSINESS  // 公出
+}
+
+model LeaveRequest {
+  id           String         @id @default(uuid())
+  employeeId   String
+  employee     Employee       @relation(fields: [employeeId], references: [employeeId])
+  
+  type         LeaveType      @default(ANNUAL)
+  startDate    DateTime
+  endDate      DateTime
+  reason       String?
+  
+  status       ApprovalStatus @default(PENDING)
+  approvedBy   String?        // 审批人用户名
+  
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+// --- 新增: 日历/节假日管理 ---
+
+model Holiday {
+  id          String   @id @default(uuid())
+  date        String   @unique // YYYY-MM-DD
+  name        String   // 例如: 元旦, 春节, 公司创立纪念日
+  isWorkday   Boolean  @default(false) // 调休时可能为 true
+  
+  createdAt   DateTime @default(now())
 }
 
 model User {

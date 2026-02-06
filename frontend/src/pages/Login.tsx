@@ -7,14 +7,20 @@ const Login: React.FC = () => {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const { login, isAuthenticated } = useAuth();
+    const { login, isAuthenticated, user } = useAuth();
     const navigate = useNavigate();
 
     useEffect(() => {
-        if (isAuthenticated) {
-            navigate('/');
+        if (isAuthenticated && user) {
+            if (user.role === 'terminal') {
+                navigate('/scanner');
+            } else if (user.role === 'viewer') {
+                navigate('/punch-qr');
+            } else {
+                navigate('/');
+            }
         }
-    }, [isAuthenticated, navigate]);
+    }, [isAuthenticated, user, navigate]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -22,8 +28,14 @@ const Login: React.FC = () => {
         setLoading(true);
 
         try {
-            await login(username, password);
-            navigate('/');
+            const loggedInUser = await login(username, password);
+            if (loggedInUser.user.role === 'terminal') {
+                navigate('/scanner');
+            } else if (loggedInUser.user.role === 'viewer') {
+                navigate('/punch-qr');
+            } else {
+                navigate('/');
+            }
         } catch (err: any) {
             setError(err.response?.data?.message || err.response?.data?.error || 'ログインに失敗しました。ユーザー名またはパスワードを確認してください。');
         } finally {
