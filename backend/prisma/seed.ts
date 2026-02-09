@@ -32,12 +32,12 @@ async function main() {
 
     const users = {
         admin: await prisma.user.create({ data: { username: 'admin', password: adminPass, role: 'admin' } }),
-        manager: await prisma.user.create({ data: { username: 'chief.mgr', password: adminPass, role: 'manager', departmentId: depts.tech.id } }),
+        manager: await prisma.user.create({ data: { username: 'chief_mgr', password: adminPass, role: 'manager', departmentId: depts.gen.id } }),
         terminal: await prisma.user.create({ data: { username: 'scanner_01', password: await bcrypt.hash('scan_secret_123', 10), role: 'terminal' as any } }),
 
-        alice: await prisma.user.create({ data: { username: 'alice.qr', password: hashedPass, role: 'viewer', departmentId: depts.tech.id } }),
-        bob: await prisma.user.create({ data: { username: 'bob.qr', password: hashedPass, role: 'viewer', departmentId: depts.tech.id } }),
-        charlie: await prisma.user.create({ data: { username: 'charlie.qr', password: hashedPass, role: 'viewer', departmentId: depts.hr.id } }),
+        alice: await prisma.user.create({ data: { username: 'alice_emp', password: hashedPass, role: 'viewer', departmentId: depts.hr.id } }),
+        bob: await prisma.user.create({ data: { username: 'bob_emp', password: hashedPass, role: 'viewer', departmentId: depts.tech.id } }),
+        charlie: await prisma.user.create({ data: { username: 'charlie_emp', password: hashedPass, role: 'viewer', departmentId: depts.sales.id } }),
     };
 
     // --- 3. 员工档案绑定 ---
@@ -45,11 +45,12 @@ async function main() {
         ceo: await prisma.employee.create({
             data: {
                 employeeId: 'EMP-000',
-                name: '山田 太郎',
+                name: 'トマト太郎',
                 position: Position.CEO,
                 status: EmployeeStatus.ACTIVE,
                 hireDate: new Date('2020-01-01'),
                 departmentId: depts.gen.id,
+                userId: users.manager.id
             }
         }),
         alice: await prisma.employee.create({
@@ -58,8 +59,8 @@ async function main() {
                 name: 'Alice Chang',
                 position: Position.STAFF,
                 status: EmployeeStatus.ACTIVE,
-                hireDate: new Date('2023-01-10'),
-                departmentId: depts.tech.id,
+                hireDate: new Date('2020-01-10'),
+                departmentId: depts.hr.id,
                 userId: users.alice.id
             }
         }),
@@ -69,6 +70,7 @@ async function main() {
                 name: 'Bob Wang',
                 position: Position.STAFF,
                 status: EmployeeStatus.ACTIVE,
+                hireDate: new Date('2020-01-11'),
                 departmentId: depts.tech.id,
                 userId: users.bob.id
             }
@@ -79,6 +81,7 @@ async function main() {
                 name: 'Charlie Li',
                 position: Position.STAFF,
                 status: EmployeeStatus.ACTIVE,
+                hireDate: new Date('2020-01-12'),
                 departmentId: depts.hr.id,
                 userId: users.charlie.id
             }
@@ -96,8 +99,8 @@ async function main() {
     await prisma.attendanceRule.create({
         data: {
             name: '默认标准上班规则',
-            standardCheckIn: '09:00',
-            standardCheckOut: '18:00',
+            standardCheckIn: '10:00',
+            standardCheckOut: '17:00',
             isDefault: true
         }
     });
@@ -158,7 +161,7 @@ async function main() {
     console.log('--------------------------------------------------');
     console.log('🛠️ 系统管理: admin / admin123');
     console.log('📸 终端账号: scanner_01 / scan_secret_123');
-    console.log('👤 员工打卡: alice.qr / pass123 (EMP-001)');
+    console.log('👤 员工打卡: alice_emp / pass123 (EMP-001)');
     console.log('--------------------------------------------------');
 }
 
