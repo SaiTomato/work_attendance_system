@@ -15,10 +15,22 @@ app.use(json());
 app.use(cookieParser());
 app.use(cors({
     origin: (origin, callback) => {
-        // 允许任何来源以便于局域网调试，同时支持 credentials
-        callback(null, true);
+        const allowedOrigins = [
+            'http://localhost:5173',
+            'http://127.0.0.1:5173',
+            'http://192.168.100.79:5173'
+        ];
+
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            console.log(`[CORS] Blocked origin: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
     },
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // Simple Request Logger

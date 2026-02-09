@@ -18,6 +18,7 @@ export interface AttendanceRecord {
     status: string;
     checkInTime?: string;
     checkOutTime?: string;
+    isModified?: boolean;
 }
 
 export interface AuditLog {

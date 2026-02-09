@@ -4,9 +4,9 @@ import { AttendanceEngine } from '../../services/attendanceEngine';
 import prisma from '../../db';
 
 export class AttendanceService {
-    async getExceptionList(dateStr?: string): Promise<AttendanceRecord[]> {
+    async getDailyRecords(dateStr?: string, filter?: string): Promise<AttendanceRecord[]> {
         const date = dateStr ? new Date(dateStr) : new Date();
-        return await attendanceRepo.getExceptions(date);
+        return await attendanceRepo.getDailyRecords(date, filter);
     }
 
     async getDashboardStats(): Promise<DailyStats> {
@@ -52,9 +52,9 @@ export class AttendanceService {
     }
 
     async updateAttendance(id: string, status: string, operator: string, reason: string): Promise<void> {
-        // 1. 处理虚拟 ID (例如: missing-EMP001)
-        if (id.startsWith('missing-')) {
-            const employeeId = id.replace('missing-', '');
+        // 1. 处理虚拟 ID (例如: missing-EMP001, leave-EMP001, wait-EMP001)
+        if (id.includes('-')) {
+            const employeeId = id.split('-')[1];
             const date = new Date().toISOString().split('T')[0];
 
             // 获取员工信息用于补录
@@ -79,7 +79,7 @@ export class AttendanceService {
                 checkInTime,
                 operator
             }, operator);
-            
+
             return;
         }
 
@@ -119,6 +119,44 @@ export class AttendanceService {
         }
 
         return defaultRule;
+    }
+
+    async syncLeaveToAttendance(leaveId: string) {
+        const leave = await prisma.leaveRequest.findUnique({
+            where: { id: leaveId },
+            include: { employee: true }
+        });
+
+        if (!leave || leave.status !== 'APPROVED') return;
+
+        const start = new Date(leave.startDate);
+        const end = new Date(leave.endDate);
+
+        // 遍历请假期间的每一天
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const dateStr = d.toISOString().split('T')[0];
+
+            const existing = await prisma.attendance.findFirst({
+                where: {
+                    employeeId: leave.employeeId,
+                    date: dateStr,
+                    deletedAt: null
+                }
+            });
+
+            if (!existing) {
+                // 如果当天没有记录，直接创建一个 leave 状态的考勤
+                await attendanceRepo.createAttendance({
+                    employeeId: leave.employeeId,
+                    employeeName: leave.employee.name,
+                    date: dateStr,
+                    status: 'leave',
+                }, 'SYSTEM_LEAVE_SYNC');
+            } else if (existing.status === 'absent' || existing.status === 'late') {
+                // 如果原本是缺勤/迟到（可能是先判定的异常），修正为 leave
+                await attendanceRepo.updateAttendance(existing.id, 'leave', 'SYSTEM_LEAVE_SYNC', 'Leave ApprovedSync');
+            }
+        }
     }
 }
 

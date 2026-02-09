@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { fetchDashboardStats, fetchExceptions, punchAttendance } from '../services/attendance.api';
+import { Link, useNavigate } from 'react-router-dom';
+import { fetchDashboardStats, fetchAttendanceList, punchAttendance } from '../services/attendance.api';
 import { DailyStats, AttendanceRecord } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -13,13 +13,14 @@ export const Dashboard: React.FC = () => {
     const [punchError, setPunchError] = useState<string | null>(null);
     const [isPunching, setIsPunching] = useState(false);
     const { user } = useAuth();
+    const navigate = useNavigate();
 
     const isViewer = user?.role === 'viewer';
 
     const loadData = () => {
         Promise.all([
             fetchDashboardStats(),
-            fetchExceptions()
+            fetchAttendanceList() // 默认仍然只取异常作为 Dashboard 里的简表展示
         ]).then(([statsRes, exceptionsRes]) => {
             if (statsRes.success && statsRes.data) {
                 setStats(statsRes.data);
@@ -31,7 +32,7 @@ export const Dashboard: React.FC = () => {
                 setExceptions(exceptionsRes.data);
             }
         }).catch(err => {
-            setError('バックエンドに接続できません。ポート4000が動作しているか確認してください。');
+            setError('バックエンドに接続できません。ポート4000が动作しているか确认してください。');
             console.error(err);
         });
     };
@@ -54,6 +55,10 @@ export const Dashboard: React.FC = () => {
         } finally {
             setIsPunching(false);
         }
+    };
+
+    const navigateToFilter = (filter: string) => {
+        navigate(`/attendance/list?filter=${filter}`);
     };
 
     useEffect(() => {
@@ -82,8 +87,8 @@ export const Dashboard: React.FC = () => {
         <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight">本日の概況</h2>
-                    <p className="text-slate-500 mt-1">{stats.date} のスナップショット</p>
+                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight">ホームページ</h2>
+                    <p className="text-slate-500 mt-1">{stats.date} の統計データ</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <button
@@ -94,10 +99,10 @@ export const Dashboard: React.FC = () => {
                         {isPunching ? (
                             <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                         ) : <ClockIcon />}
-                        {isPunching ? '処理中...' : '出勤/退勤打卡'}
+                        {isPunching ? '処理中...' : '出勤/退勤打刻'}
                     </button>
                     {!isViewer && <button className="btn-premium bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 shadow-sm">レポート出力</button>}
-                    <button onClick={loadData} className="btn-premium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">数据更新</button>
+                    <button onClick={loadData} className="btn-premium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">データ更新</button>
                 </div>
             </header>
 
@@ -108,10 +113,10 @@ export const Dashboard: React.FC = () => {
                         <ExclamationTriangleIcon className="w-6 h-6" />
                     </div>
                     <div>
-                        <h4 className="text-lg font-bold text-rose-900">打卡校验失败 (考勤异常拦截)</h4>
+                        <h4 className="text-lg font-bold text-rose-900">打刻バリデーション失敗 (勤怠異常)</h4>
                         <p className="text-rose-700 mt-1 font-medium">{punchError}</p>
                         <p className="text-rose-500 text-sm mt-3 flex items-center gap-1 italic">
-                            请尽快前往管理处处理异常状态，管理员确认后方可解锁后续打卡权限。
+                            管理者に連絡して異常状態を解消してください。管理者の承認後に打刻が可能になります。
                         </p>
                     </div>
                     <button onClick={() => setPunchError(null)} className="ml-auto text-rose-400 hover:text-rose-600">
@@ -123,41 +128,47 @@ export const Dashboard: React.FC = () => {
             {/* Premium Stat Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
                 <StatCard
-                    label="总员工数"
+                    label="全従業員"
                     value={stats.totalEmployees}
                     icon={<UsersIcon />}
                     color="indigo"
+                    onClick={() => navigateToFilter('all')}
                 />
                 <StatCard
-                    label="正常出席"
+                    label="正常出勤"
                     value={stats.present}
                     icon={<CheckCircleIcon />}
                     color="emerald"
+                    onClick={() => navigateToFilter('present')}
                 />
                 <StatCard
-                    label="下班打卡"
+                    label="退勤完了"
                     value={stats.successOut}
                     icon={<ArrowRightOnRectangleIcon />}
                     color="cyan"
+                    onClick={() => navigateToFilter('successOut')}
                 />
                 <StatCard
-                    label="未出席 (待命)"
+                    label="未出勤 (待機)"
                     value={stats.unattended}
                     icon={<ClockIcon />}
                     color="slate"
+                    onClick={() => navigateToFilter('unattended')}
                 />
                 <StatCard
-                    label="考勤异常"
+                    label="勤怠異常"
                     value={stats.exceptions}
                     icon={<ExclamationTriangleIcon />}
                     color="rose"
                     isCritical={stats.exceptions > 0}
+                    onClick={() => navigateToFilter('exceptions')}
                 />
                 <StatCard
-                    label="休暇/休假"
+                    label="休暇"
                     value={stats.leave}
                     icon={<CalendarIcon />}
                     color="amber"
+                    onClick={() => navigateToFilter('leave')}
                 />
             </div>
 
@@ -240,7 +251,7 @@ export const Dashboard: React.FC = () => {
 };
 
 // Sub-components for better organization
-const StatCard = ({ label, value, icon, color, isCritical }: any) => {
+const StatCard = ({ label, value, icon, color, isCritical, onClick }: any) => {
     const colorClasses: any = {
         indigo: 'bg-indigo-600 shadow-indigo-200',
         emerald: 'bg-emerald-600 shadow-emerald-200',
@@ -251,7 +262,10 @@ const StatCard = ({ label, value, icon, color, isCritical }: any) => {
     };
 
     return (
-        <div className={`glass-card p-6 stat-card-glow ${isCritical ? 'border-rose-200/50 bg-rose-50/20' : ''}`}>
+        <div
+            onClick={onClick}
+            className={`glass-card p-6 stat-card-glow cursor-pointer transition-all hover:scale-[1.03] active:scale-[0.98] hover:shadow-xl ${isCritical ? 'border-rose-200/50 bg-rose-50/20' : ''}`}
+        >
             <div className="flex items-start justify-between">
                 <div>
                     <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">{label}</p>
@@ -264,8 +278,8 @@ const StatCard = ({ label, value, icon, color, isCritical }: any) => {
                 </div>
             </div>
             <div className="mt-4 flex items-center text-xs font-medium">
-                <span className="text-emerald-500 font-bold">↑ 12%</span>
-                <span className="text-slate-400 ml-1">前日比</span>
+                <span className="text-emerald-500 font-bold">查看详情</span>
+                <span className="text-slate-300 ml-1">➔</span>
             </div>
         </div>
     );

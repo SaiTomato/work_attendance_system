@@ -3,9 +3,9 @@ import prisma from '../../db';
 
 export class AttendanceRepo {
     /**
-     * 获取今日异常列表 (动态侦测缺勤、迟到、早退、漏打卡)
+     * 获取指定日期的所有考勤记录/详情 (支持过滤: all, present, absent, late, leave, successOut)
      */
-    async getExceptions(date: Date): Promise<AttendanceRecord[]> {
+    async getDailyRecords(date: Date, filterType: string = 'exceptions'): Promise<AttendanceRecord[]> {
         const dateStr = date.toISOString().split('T')[0];
         const now = new Date();
 
@@ -25,9 +25,15 @@ export class AttendanceRepo {
             }
         });
 
-        // 2. 获取今日已有记录
+        // 2. 获取今日已有记录 (包含审计日志以判断是否被手动修改过)
         const records = await prisma.attendance.findMany({
-            where: { date: dateStr, deletedAt: null }
+            where: { date: dateStr, deletedAt: null },
+            include: {
+                auditLogs: {
+                    where: { action: 'UPDATE' },
+                    take: 1
+                }
+            }
         });
 
         const recordMap = new Map();
@@ -39,7 +45,6 @@ export class AttendanceRepo {
             (prisma as any).holiday.findUnique({ where: { date: dateStr } })
         ]);
 
-        // 如果是节假日且不是补班日，全员默认不产生“缺勤”异常
         const isNonWorkingDay = (holiday && !holiday.isWorkday) || (!holiday && (now.getDay() === 0 || now.getDay() === 6));
 
         const [stdH, stdM] = (rule?.standardCheckIn || '09:00').split(':').map(Number);
@@ -64,48 +69,76 @@ export class AttendanceRepo {
         });
         const leaveMap = new Set(approvedLeaves.map((l: any) => l.employeeId));
 
-        const exceptionList: AttendanceRecord[] = [];
+        const fullList: AttendanceRecord[] = [];
 
-        // 4. 动态侦测
+        // 4. 动态构建完整名单
         totalEmployees.forEach(emp => {
             const r = recordMap.get(emp.employeeId);
+            let finalRecord: any;
 
             if (!r) {
-                // 情况：今天还没来打过卡
-                // 如果是工作日且过了上班点，且没有请假 -> 判定为缺勤异常
-                if (!isNonWorkingDay && now > inDeadline && !leaveMap.has(emp.employeeId)) {
-                    exceptionList.push({
+                // 如果当天没有记录，可能是还没打卡或者请假
+                if (leaveMap.has(emp.employeeId)) {
+                    finalRecord = {
+                        id: `leave-${emp.employeeId}`,
+                        employeeId: emp.employeeId,
+                        employeeName: emp.name,
+                        date: dateStr,
+                        status: 'leave',
+                        isModified: false
+                    };
+                } else if (!isNonWorkingDay && now > inDeadline) {
+                    finalRecord = {
                         id: `missing-${emp.employeeId}`,
                         employeeId: emp.employeeId,
                         employeeName: emp.name,
                         date: dateStr,
                         status: 'absent',
-                    } as any);
+                        isModified: false
+                    };
+                } else {
+                    // 尚未到时间，或者休息日且无记录
+                    finalRecord = {
+                        id: `wait-${emp.employeeId}`,
+                        employeeId: emp.employeeId,
+                        employeeName: emp.name,
+                        date: dateStr,
+                        status: 'unattended',
+                        isModified: false
+                    };
                 }
             } else {
-                // 情况：已经有记录，查状态是否异常
-                let isAnomaly = false;
-                if (r.status === 'late' || r.status === 'absent') isAnomaly = true;
-
-                // 检查下班维度
-                if (r.checkOutTime) {
-                    const checkout = new Date(r.checkOutTime);
-                    if (checkout < outTime) isAnomaly = true; // 早退
-                } else if (now > outGraceDeadline && r.checkInTime) {
-                    isAnomaly = true; // 忘记下班打卡
-                }
-
-                if (isAnomaly) {
-                    exceptionList.push({
-                        ...r,
-                        checkInTime: r.checkInTime?.toISOString(),
-                        checkOutTime: r.checkOutTime?.toISOString()
-                    } as any);
-                }
+                // 已有记录
+                finalRecord = {
+                    ...r,
+                    checkInTime: r.checkInTime?.toISOString(),
+                    checkOutTime: r.checkOutTime?.toISOString(),
+                    isModified: r.auditLogs.length > 0
+                };
             }
+
+            // 5. 应用过滤
+            let include = false;
+            if (filterType === 'all') include = true;
+            else if (filterType === 'exceptions') {
+                // 异常定义：absent, late, 或者由于超时导致的各种问题
+                if (finalRecord.status === 'absent' || finalRecord.status === 'late') include = true;
+                else if (finalRecord.checkInTime && !finalRecord.checkOutTime && now > outGraceDeadline) include = true;
+                else if (finalRecord.checkOutTime && new Date(finalRecord.checkOutTime) < outTime) include = true;
+            }
+            else if (filterType === 'present') {
+                include = ['present', 'wfh', 'worksite', 'late'].includes(finalRecord.status) && !!finalRecord.checkInTime;
+            }
+            else if (filterType === 'absent') include = finalRecord.status === 'absent';
+            else if (filterType === 'late') include = finalRecord.status === 'late';
+            else if (filterType === 'leave') include = finalRecord.status === 'leave';
+            else if (filterType === 'unattended') include = finalRecord.status === 'unattended';
+            else if (filterType === 'successOut') include = !!finalRecord.checkOutTime && new Date(finalRecord.checkOutTime) >= outTime;
+
+            if (include) fullList.push(finalRecord);
         });
 
-        return exceptionList.sort((a, b) => b.employeeId.localeCompare(a.employeeId));
+        return fullList.sort((a: any, b: any) => a.employeeId.localeCompare(b.employeeId));
     }
 
     /**

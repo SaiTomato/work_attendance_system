@@ -152,11 +152,12 @@ router.get('/dashboard/stats', requireRole(['admin', 'manager', 'hr']), async (r
     }
 });
 
-// 5. 异常列表 (管理层权限)
-router.get('/exceptions', requireRole(['admin', 'manager', 'hr']), async (req: Request, res: Response) => {
+// 5. 详细记录列表 (支持过滤: all, present, absent, late, leave, unattended, successOut)
+router.get('/list', requireRole(['admin', 'manager', 'hr']), async (req: Request, res: Response) => {
     try {
         const date = req.query.date as string;
-        const list = await attendanceService.getExceptionList(date);
+        const filter = req.query.filter as string;
+        const list = await attendanceService.getDailyRecords(date, filter);
         successResponse(res, list);
     } catch (error: any) {
         errorResponse(res, error.message);

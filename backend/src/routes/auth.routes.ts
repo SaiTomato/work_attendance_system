@@ -7,6 +7,15 @@ import { revokeRefreshToken, storeRefreshToken } from '../services/refreshTokenS
 
 const router = express.Router();
 
+// Cookie Options Check
+const COOKIE_OPTIONS: any = {
+    httpOnly: true,
+    secure: false, // Proxy 模式下后端认为是内网 HTTP，且 Same-Origin 不需要 Secure
+    sameSite: 'lax', // Lax 完美支持同源
+    path: '/',
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+};
+
 /**
  * Skill: attendance-api-create - 统一响应格式
  * Skill: rbac-check - 用户登入
@@ -60,7 +69,9 @@ router.post(
                 id: user.id
             });
 
+            console.log(`[Auth] User ${username} logged in successfully. Role: ${user.role}`);
             const ok = await storeRefreshToken(user.id, refreshToken);
+            console.log(`[Auth] Refreshtoken store result: ${ok}`);
 
             if (!ok) {
                 return res.status(500).json({
@@ -71,13 +82,7 @@ router.post(
 
             res
                 .status(200)
-                .cookie('refreshToken', refreshToken, {
-                    httpOnly: true,
-                    secure: false, // 强制为 false 以支持 localhost/IP 的 HTTP 环境
-                    sameSite: 'lax',
-                    path: '/',
-                    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-                })
+                .cookie('refreshToken', refreshToken, COOKIE_OPTIONS)
                 .json({
                     success: true,
                     data: {
@@ -87,7 +92,7 @@ router.post(
                             username: user.username,
                             role: user.role,
                         },
-                    }
+                    },
                 });
         } catch (err) {
             console.error('Login error:', err);
@@ -100,25 +105,41 @@ router.post(
 );
 
 router.post('/logout', async (req: Request, res: Response) => {
-    const refreshToken = (req as any).cookies?.refreshToken || req.body.refreshToken;
+    // 调试日志：查看所有接收到的 Cookie
+    console.log(`[Auth] Logout cookies received:`, req.cookies);
+
+    const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
 
     if (!refreshToken) {
+        console.warn(`[Auth] Logout failed: No refresh token found in cookies or body.`);
         return res.status(200).json({
             success: true,
-            message: 'Already logged out',
+            message: 'Already logged out (no token found)',
         });
     }
 
     try {
-        await revokeRefreshToken(refreshToken);
+        console.log(`[Auth] Revoke attempt for token: ${refreshToken.substring(0, 15)}...`);
+        let userId: string | undefined;
+        try {
+            const decoded = verifyRefreshToken(refreshToken);
+            userId = decoded.id;
+        } catch (e) {
+            console.log(`[Auth] Token verify failed during logout (may be expired), continuing revocation by hash...`);
+        }
+
+        const ok = await revokeRefreshToken(refreshToken, userId);
+        console.log(`[Auth] Revoke database result: ${ok}`);
     } catch (err) {
-        console.error('Logout revocation failed:', err);
+        console.error('[Auth] Logout revocation error:', err);
     }
 
+    // 无论数据库撤销是否成功，都尝试清除客户端 Cookie
     return res
         .status(200)
         .clearCookie('refreshToken', {
-            path: '/',
+            ...COOKIE_OPTIONS,
+            maxAge: 0
         })
         .json({
             success: true,
@@ -182,13 +203,7 @@ router.post(
         await storeRefreshToken(user.id, newRefreshToken);
 
         res
-            .cookie('refreshToken', newRefreshToken, {
-                httpOnly: true,
-                secure: false, // 强制为 false
-                sameSite: 'lax',
-                path: '/',
-                maxAge: 7 * 24 * 60 * 60 * 1000,
-            })
+            .cookie('refreshToken', newRefreshToken, COOKIE_OPTIONS)
             .json({
                 success: true,
                 data: {

@@ -1,5 +1,6 @@
 import prisma from '../../db';
 import { LeaveType, ApprovalStatus } from '@prisma/client';
+import { attendanceService } from '../attendance/attendance.service';
 
 export const leaveService = {
     /**
@@ -98,12 +99,23 @@ export const leaveService = {
      * 审批申请
      */
     async updateStatus(id: string, status: ApprovalStatus, approvedBy: string) {
-        return await prisma.leaveRequest.update({
+        const updated = await prisma.leaveRequest.update({
             where: { id },
             data: {
                 status,
                 approvedBy
             }
         });
+
+        // 如果审批通过，同步到考勤表
+        if (status === ApprovalStatus.APPROVED) {
+            try {
+                await attendanceService.syncLeaveToAttendance(id);
+            } catch (err) {
+                console.error('Leave sync to attendance failed:', err);
+            }
+        }
+
+        return updated;
     }
 };

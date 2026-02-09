@@ -89,8 +89,8 @@ const Header = () => {
                     <nav className="hidden md:flex items-center gap-8">
                         {['admin', 'manager', 'hr'].includes(user?.role || '') && (
                             <>
-                                <Link to="/" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">Dashboard</Link>
-                                <Link to="/attendance/list" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">例外リスト</Link>
+                                <Link to="/" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">ホームページ</Link>
+                                <Link to="/attendance/list" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">異常リスト</Link>
                             </>
                         )}
                         {user?.role !== 'terminal' && (
@@ -113,12 +113,14 @@ const Header = () => {
                         <div className="flex items-center gap-3 border-l border-slate-200 pl-8">
                             <div className="text-right">
                                 <p className="text-xs font-bold text-slate-900 uppercase tracking-wider">{user?.username}</p>
-                                <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">{user?.role}</p>
+                                <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">
+                                    {user?.role === 'admin' ? '管理者' : user?.role === 'hr' ? '人事' : user?.role === 'manager' ? 'マネージャー' : '一般'}
+                                </p>
                             </div>
                             <button
                                 onClick={() => logout()}
                                 className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 cursor-pointer hover:bg-rose-50 hover:text-rose-500 hover:border-rose-100 transition-all"
-                                title="Sign Out"
+                                title="ログアウト"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
                             </button>
@@ -133,8 +135,8 @@ const Header = () => {
                     <div className="px-4 py-6 space-y-4">
                         {['admin', 'manager', 'hr'].includes(user?.role || '') && (
                             <>
-                                <Link to="/" onClick={() => setIsMenuOpen(false)} className="block px-4 py-3 text-base font-bold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">Dashboard</Link>
-                                <Link to="/attendance/list" onClick={() => setIsMenuOpen(false)} className="block px-4 py-3 text-base font-bold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">例外リスト</Link>
+                                <Link to="/" onClick={() => setIsMenuOpen(false)} className="block px-4 py-3 text-base font-bold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">ホームページ</Link>
+                                <Link to="/attendance/list" onClick={() => setIsMenuOpen(false)} className="block px-4 py-3 text-base font-bold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">異常リスト</Link>
                             </>
                         )}
                         {user?.role !== 'terminal' && (
@@ -153,13 +155,15 @@ const Header = () => {
                         <div className="pt-4 border-t border-slate-50 flex items-center justify-between px-4">
                             <div>
                                 <p className="text-sm font-black text-slate-900">{user?.username}</p>
-                                <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">{user?.role}</p>
+                                <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">
+                                    {user?.role === 'admin' ? '管理者' : user?.role === 'hr' ? '人事' : user?.role === 'manager' ? 'マネージャー' : '一般'}
+                                </p>
                             </div>
                             <button
                                 onClick={() => { logout(); setIsMenuOpen(false); }}
                                 className="px-4 py-2 bg-rose-50 text-rose-600 rounded-lg text-xs font-black uppercase tracking-widest transition-colors"
                             >
-                                Sign Out
+                                ログアウト
                             </button>
                         </div>
                     </div>

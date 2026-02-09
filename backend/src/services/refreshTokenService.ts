@@ -27,14 +27,30 @@ export async function storeRefreshToken(
 
 export async function revokeRefreshToken(
   refreshToken: string,
-  userId?: string
+  _userId?: string
 ): Promise<boolean> {
   try {
     const tokenHash = hashToken(refreshToken);
+    console.log(`[TokenService] Attempting to revoke Hash: ${tokenHash.substring(0, 8)}...`);
 
+    // 1. 先查
+    const existing = await prisma.refreshToken.findUnique({
+      where: { tokenHash }
+    });
+
+    if (!existing) {
+      console.log(`[TokenService] Revoke FAILED: Hash NOT FOUND in DB.`);
+      return false;
+    }
+
+    if (existing.revokedAt) {
+      console.log(`[TokenService] Revoke SKIPPED: Already revoked at ${existing.revokedAt}`);
+      return true;
+    }
+
+    // 2. 更新
     const result = await prisma.refreshToken.updateMany({
       where: {
-        userId,
         tokenHash,
         revokedAt: null,
       },
@@ -43,6 +59,7 @@ export async function revokeRefreshToken(
       },
     });
 
+    console.log(`[TokenService] Revoke SUCCESS: result.count: ${result.count}`);
     return result.count > 0;
   } catch (err) {
     console.error('revokeRefreshToken error:', err);

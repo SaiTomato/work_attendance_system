@@ -10,11 +10,11 @@ export const fetchDashboardStats = async (): Promise<ApiResponse<DailyStats>> =>
 };
 
 /**
- * 获取异常列表
+ * 获取考勤列表 (支持过滤)
  */
-export const fetchExceptions = async (date?: string): Promise<ApiResponse<AttendanceRecord[]>> => {
-    const res = await api.get('/attendance/exceptions', {
-        params: { date }
+export const fetchAttendanceList = async (date?: string, filter?: string): Promise<ApiResponse<AttendanceRecord[]>> => {
+    const res = await api.get('/attendance/list', {
+        params: { date, filter }
     });
     return res.data;
 };

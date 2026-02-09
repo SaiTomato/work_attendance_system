@@ -1,27 +1,29 @@
 import React, { useEffect, useState } from 'react';
-import { fetchExceptions, updateAttendanceStatus, deleteAttendanceRecord } from '../services/attendance.api';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { fetchAttendanceList, updateAttendanceStatus, deleteAttendanceRecord } from '../services/attendance.api';
 import { AttendanceRecord } from '../types';
 import { EditAttendanceModal } from '../components/modals/EditAttendanceModal';
 import { useAuth } from '../contexts/AuthContext';
 
 // Skill: frontend-admin-view
-// Rules: 
-// 1. 展示“异常” (Exception List)
-// 2. 表格优先于表单
-// 3. 多种角色权限动态展示
-
 export const AttendanceList: React.FC = () => {
     const [records, setRecords] = useState<AttendanceRecord[]>([]);
     const [loading, setLoading] = useState(true);
     const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
     const { user } = useAuth();
+    const navigate = useNavigate();
+    const location = useLocation();
+
+    // 从 URL 获取 filter 参数
+    const searchParams = new URLSearchParams(location.search);
+    const currentFilter = searchParams.get('filter') || 'exceptions';
 
     const isAdminOrHR = user?.role === 'admin' || user?.role === 'hr';
     const isViewer = user?.role === 'viewer';
 
     const loadData = () => {
         setLoading(true);
-        fetchExceptions().then(res => {
+        fetchAttendanceList(undefined, currentFilter).then(res => {
             if (res.success && res.data) {
                 setRecords(res.data);
             }
@@ -31,7 +33,7 @@ export const AttendanceList: React.FC = () => {
 
     useEffect(() => {
         loadData();
-    }, []);
+    }, [currentFilter]);
 
     const handleUpdate = async (id: string, status: string, reason: string) => {
         if (!window.confirm('この変更は監査ログに記録されます。よろしいですか？')) return;
@@ -52,29 +54,76 @@ export const AttendanceList: React.FC = () => {
         }
     };
 
-    const getStatusBadge = (status: string) => {
+    const getStatusBadge = (record: AttendanceRecord) => {
         const base = "px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-2";
-        switch (status) {
+        let statusEl;
+        switch (record.status) {
+            case 'present':
+                statusEl = <span className={`${base} bg-emerald-50 text-emerald-700 border-emerald-100 shadow-sm shadow-emerald-100/50`}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    正常出勤
+                </span>;
+                break;
             case 'late':
-                return <span className={`${base} bg-amber-50 text-amber-700 border-amber-100 shadow-sm shadow-amber-100/50`}>
+                statusEl = <span className={`${base} bg-amber-50 text-amber-700 border-amber-100 shadow-sm shadow-amber-100/50`}>
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                    遅刻 (Late)
+                    遅刻
                 </span>;
+                break;
             case 'absent':
-                return <span className={`${base} bg-rose-50 text-rose-700 border-rose-100 shadow-sm shadow-rose-100/50`}>
+                statusEl = <span className={`${base} bg-rose-50 text-rose-700 border-rose-100 shadow-sm shadow-rose-100/50`}>
                     <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-                    欠勤 (Absent)
+                    欠勤
                 </span>;
+                break;
             case 'leave':
-                return <span className={`${base} bg-sky-50 text-sky-700 border-sky-100 shadow-sm shadow-sky-100/50`}>
+                statusEl = <span className={`${base} bg-sky-50 text-sky-700 border-sky-100 shadow-sm shadow-sky-100/50`}>
                     <span className="w-1.5 h-1.5 rounded-full bg-sky-400"></span>
-                    休暇 (Leave)
+                    休暇
                 </span>;
+                break;
+            case 'unattended':
+                statusEl = <span className={`${base} bg-slate-50 text-slate-500 border-slate-200 shadow-sm`}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                    未出勤 (待機)
+                </span>;
+                break;
+            case 'wfh':
+                statusEl = <span className={`${base} bg-indigo-50 text-indigo-700 border-indigo-100 shadow-sm`}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                    在宅勤務 (WFH)
+                </span>;
+                break;
             default:
-                return <span className={`${base} bg-slate-50 text-slate-600 border-slate-100 shadow-sm`}>
+                statusEl = <span className={`${base} bg-slate-50 text-slate-600 border-slate-100 shadow-sm`}>
                     <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                    {status}
+                    {record.status}
                 </span>;
+        }
+
+        return (
+            <div className="flex items-center gap-2">
+                {statusEl}
+                {record.isModified && (
+                    <span className="text-amber-500 flex items-center" title="手動修正済み">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+                        <span className="text-[10px] font-bold ml-0.5">修正済</span>
+                    </span>
+                )}
+            </div>
+        );
+    };
+
+    const getPageTitle = () => {
+        switch (currentFilter) {
+            case 'all': return '全従業員勤怠詳細';
+            case 'present': return '正常出勤一覧';
+            case 'absent': return '欠勤一覧';
+            case 'late': return '遅刻記録一覧';
+            case 'leave': return '休暇中従業員';
+            case 'unattended': return '未出勤（待機）一覧';
+            case 'successOut': return '退勤完了一覧';
+            default: return '異常リスト';
         }
     };
 
@@ -89,16 +138,36 @@ export const AttendanceList: React.FC = () => {
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <header className="flex justify-between items-center mb-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-slate-900 tracking-tight">出勤例外リスト</h1>
-                    <p className="text-slate-500 mt-1 italic uppercase text-xs tracking-widest font-bold">Attendance Exceptions</p>
+                    <h1 className="text-3xl font-bold text-slate-900 tracking-tight">{getPageTitle()}</h1>
+                    <p className="text-slate-500 mt-1 italic uppercase text-xs tracking-widest font-bold">勤怠詳細ビュー</p>
                 </div>
                 <div className="flex gap-3">
-                    <button className="btn-premium bg-white text-slate-700 border border-slate-200 hover:bg-slate-50">検索</button>
-                    {!isViewer && <button className="btn-premium btn-primary px-6">エクスポート</button>}
+                    <button className="btn-premium bg-white text-slate-700 border border-slate-200 hover:bg-slate-50">日付選択</button>
+                    {!isViewer && <button className="btn-premium btn-primary px-6">統計エクスポート</button>}
                 </div>
             </header>
 
             <div className="glass-card overflow-hidden">
+                <div className="px-8 py-4 border-b border-slate-100 bg-slate-50/30 flex justify-between items-center">
+                    <div className="flex gap-2">
+                        {[
+                            { id: 'all', label: '全て' },
+                            { id: 'exceptions', label: '異常' },
+                            { id: 'present', label: '正常' },
+                            { id: 'absent', label: '欠勤' },
+                            { id: 'late', label: '遅刻' },
+                            { id: 'leave', label: '休暇' }
+                        ].map(f => (
+                            <button
+                                key={f.id}
+                                onClick={() => navigate(`?filter=${f.id}`)}
+                                className={`px-3 py-1 text-xs rounded-lg transition-all ${currentFilter === f.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
+                            >
+                                {f.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
                 <div className="overflow-x-auto">
                     <table className="min-w-full">
                         <thead>
@@ -107,14 +176,14 @@ export const AttendanceList: React.FC = () => {
                                 <th className="px-8 py-5 text-left text-xs font-bold text-slate-400 uppercase tracking-widest leading-none">氏名</th>
                                 <th className="px-8 py-5 text-left text-xs font-bold text-slate-400 uppercase tracking-widest leading-none">日付</th>
                                 <th className="px-8 py-5 text-left text-xs font-bold text-slate-400 uppercase tracking-widest leading-none">ステータス</th>
-                                <th className="px-8 py-5 text-left text-xs font-bold text-slate-400 uppercase tracking-widest leading-none">打卡時間 (IN/OUT)</th>
+                                <th className="px-8 py-5 text-left text-xs font-bold text-slate-400 uppercase tracking-widest leading-none">打刻時間 (IN/OUT)</th>
                                 <th className="px-8 py-5 text-right text-xs font-bold text-slate-400 uppercase tracking-widest leading-none">操作</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white/40">
                             {records.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="px-8 py-16 text-center text-slate-400 italic font-medium">該当する例外データはありません。</td>
+                                    <td colSpan={6} className="px-8 py-16 text-center text-slate-400 italic font-medium">該当するデータはありません。</td>
                                 </tr>
                             ) : (
                                 records.map((record) => (
@@ -129,7 +198,7 @@ export const AttendanceList: React.FC = () => {
                                             </div>
                                         </td>
                                         <td className="px-8 py-5 text-sm text-slate-500 font-medium">{record.date}</td>
-                                        <td className="px-8 py-5">{getStatusBadge(record.status)}</td>
+                                        <td className="px-8 py-5">{getStatusBadge(record)}</td>
                                         <td className="px-8 py-5 text-sm font-mono text-slate-400">
                                             {record.checkInTime ? `${new Date(record.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ➔ ${record.checkOutTime ? new Date(record.checkOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}` : '—'}
                                         </td>
@@ -139,6 +208,7 @@ export const AttendanceList: React.FC = () => {
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                                 </button>
 
+                                                {/* 只有针对真实存在的记录或者缺失打卡的记录(missing-)才显示修正ボタン */}
                                                 {!isViewer && (
                                                     <>
                                                         <button

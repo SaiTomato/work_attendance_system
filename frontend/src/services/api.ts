@@ -1,6 +1,8 @@
 import axios, { AxiosRequestConfig } from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+// 使用 Vite Proxy: 使得 API 请求看起来像是发给同源的 (localhost:5173/api)
+// 这样浏览器就会自动处理 Cookie，无需跨域及 SameSite=None 配置
+const BASE_URL = import.meta.env.VITE_API_URL || '';
 const API_URL = `${BASE_URL}/api`;
 
 export const api = axios.create({
