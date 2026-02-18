@@ -5,6 +5,9 @@ export interface DailyStats {
     late: number;
     absent: number;
     leave: number;
+    wfh: number; // 远程办公
+    worksite: number; // 现场工作
+    earlyLeave: number; // 早退人数
     unattended: number;
     successOut: number;
     exceptions: number;
@@ -18,6 +21,7 @@ export interface AttendanceRecord {
     status: string;
     checkInTime?: string;
     checkOutTime?: string;
+    workHours?: number; // 实绩工时
     isModified?: boolean;
 }
 

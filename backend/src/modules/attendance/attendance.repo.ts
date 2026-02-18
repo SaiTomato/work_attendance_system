@@ -288,9 +288,13 @@ export class AttendanceRepo {
         // 4. 开始分类统计
         let present = 0;
         let late = 0;
+        let earlyLeave = 0;
         let leaveRecordsCnt = 0;
+        let wfhCnt = 0; // 远程办公
+        let worksiteCnt = 0; // 现场工作
         let successOut = 0;
         let exceptions = 0;
+        let forgetOutAbsent = 0; // 忘记打卡转缺勤的人数
 
         const processedIds = new Set();
 
@@ -298,26 +302,31 @@ export class AttendanceRepo {
             processedIds.add(r.employeeId);
 
             // 基础状态判定
-            if (r.status === 'present' || r.status === 'wfh' || r.status === 'worksite') present++;
-            if (r.status === 'late') { late++; exceptions++; }
-            if (r.status === 'leave') leaveRecordsCnt++;
+            let effectiveStatus = r.status;
+
+            // 动态逻辑：如果当前已过19:00且忘记打下班卡，统计时视为缺勤
+            if (!r.checkOutTime && now > outGraceDeadline && r.checkInTime) {
+                effectiveStatus = 'absent';
+            }
+
+            if (effectiveStatus === 'present') present++;
+            if (effectiveStatus === 'wfh') wfhCnt++;
+            if (effectiveStatus === 'worksite') worksiteCnt++;
+            if (effectiveStatus === 'late') { late++; exceptions++; }
+            if (effectiveStatus === 'leave') leaveRecordsCnt++;
+            if (effectiveStatus === 'early_leave') { earlyLeave++; exceptions++; }
+            if (effectiveStatus === 'absent') {
+                forgetOutAbsent++;
+                // 只有原本不是缺勤但在统计时变为缺勤的，才需要额外计入异常（原本就是缺勤的已经在 exceptions 里了，或者在 missingExceptions 里）
+                exceptions++;
+            }
 
             // --- 下班/早退 逻辑监控 ---
             if (r.checkOutTime) {
                 const checkout = new Date(r.checkOutTime);
                 if (checkout >= outTime && checkout <= outGraceDeadline) {
-                    // 正常时间范围内下班
                     successOut++;
-                } else if (checkout < outTime) {
-                    // 早退判定 -> 计入异常
-                    exceptions++;
-                } else if (checkout > outGraceDeadline) {
-                    // 超过加班宽限期才打卡 -> 计入异常 (虽然打到了卡，但属于异常行为)
-                    exceptions++;
                 }
-            } else if (now > outGraceDeadline && r.checkInTime) {
-                // 忘记打下班卡 (超过规定加班时间依然无记录) -> 计入异常
-                exceptions++;
             }
         });
 
@@ -351,8 +360,11 @@ export class AttendanceRepo {
             totalEmployees: totalCount,
             present,
             late,
-            absent: missingExceptions,
+            absent: missingExceptions + forgetOutAbsent,
             leave: leaveMap.size,
+            wfh: wfhCnt,
+            worksite: worksiteCnt,
+            earlyLeave,
             unattended: now < inDeadline ? (totalCount - processedIds.size - leaveMap.size) : 0,
             successOut,
             exceptions: exceptions + missingExceptions

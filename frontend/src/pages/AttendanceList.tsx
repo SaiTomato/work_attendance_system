@@ -94,6 +94,18 @@ export const AttendanceList: React.FC = () => {
                     在宅勤務 (WFH)
                 </span>;
                 break;
+            case 'worksite':
+                statusEl = <span className={`${base} bg-purple-50 text-purple-700 border-purple-100 shadow-sm shadow-purple-100/50`}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+                    現場勤務
+                </span>;
+                break;
+            case 'early_leave':
+                statusEl = <span className={`${base} bg-orange-50 text-orange-700 border-orange-100 shadow-sm shadow-orange-100/50`}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-400"></span>
+                    早退
+                </span>;
+                break;
             default:
                 statusEl = <span className={`${base} bg-slate-50 text-slate-600 border-slate-100 shadow-sm`}>
                     <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
@@ -156,6 +168,7 @@ export const AttendanceList: React.FC = () => {
                             { id: 'present', label: '正常' },
                             { id: 'absent', label: '欠勤' },
                             { id: 'late', label: '遅刻' },
+                            { id: 'early_leave', label: '早退' },
                             { id: 'leave', label: '休暇' }
                         ].map(f => (
                             <button
@@ -177,13 +190,14 @@ export const AttendanceList: React.FC = () => {
                                 <th className="px-8 py-5 text-left text-xs font-bold text-slate-400 uppercase tracking-widest leading-none">日付</th>
                                 <th className="px-8 py-5 text-left text-xs font-bold text-slate-400 uppercase tracking-widest leading-none">ステータス</th>
                                 <th className="px-8 py-5 text-left text-xs font-bold text-slate-400 uppercase tracking-widest leading-none">打刻時間 (IN/OUT)</th>
+                                <th className="px-8 py-5 text-left text-xs font-bold text-slate-400 uppercase tracking-widest leading-none">工時</th>
                                 <th className="px-8 py-5 text-right text-xs font-bold text-slate-400 uppercase tracking-widest leading-none">操作</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white/40">
                             {records.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="px-8 py-16 text-center text-slate-400 italic font-medium">該当するデータはありません。</td>
+                                    <td colSpan={7} className="px-8 py-16 text-center text-slate-400 italic font-medium">該当するデータはありません。</td>
                                 </tr>
                             ) : (
                                 records.map((record) => (
@@ -201,6 +215,11 @@ export const AttendanceList: React.FC = () => {
                                         <td className="px-8 py-5">{getStatusBadge(record)}</td>
                                         <td className="px-8 py-5 text-sm font-mono text-slate-400">
                                             {record.checkInTime ? `${new Date(record.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ➔ ${record.checkOutTime ? new Date(record.checkOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}` : '—'}
+                                        </td>
+                                        <td className="px-8 py-5">
+                                            <span className={`text-sm font-bold ${record.workHours && record.workHours > 0 ? 'text-indigo-600' : 'text-slate-300'}`}>
+                                                {record.workHours ? `${record.workHours.toFixed(1)}h` : '0h'}
+                                            </span>
                                         </td>
                                         <td className="px-8 py-5 text-right">
                                             <div className="flex justify-end gap-2 items-center">

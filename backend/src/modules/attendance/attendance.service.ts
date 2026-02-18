@@ -42,11 +42,52 @@ export class AttendanceService {
 
         const rule = await this.getApplicableRule(data.employeeId);
 
-        // 3. 自动计算状态 (如果没有手动指定状态)
-        if (!data.status) {
-            const checkInDate = data.checkInTime ? new Date(data.checkInTime) : null;
-            data.status = AttendanceEngine.calculateStatus(checkInDate, rule, employee);
+        // 3. 应用时间取整规则
+        let roundedCheckIn = data.checkInTime ? new Date(data.checkInTime) : null;
+        let roundedCheckOut = data.checkOutTime ? new Date(data.checkOutTime) : null;
+
+        // 3.1 上班打卡：向上取整到15分钟（迟到惩罚）
+        if (roundedCheckIn) {
+            const [stdHour, stdMin] = rule.standardCheckIn.split(':').map(Number);
+            const standardTime = new Date(roundedCheckIn);
+            standardTime.setHours(stdHour, stdMin, 0, 0);
+
+            // 只有迟到的情况才需要向上取整
+            if (roundedCheckIn > standardTime) {
+                roundedCheckIn = AttendanceEngine.ceilTo15Min(roundedCheckIn);
+            } else {
+                // 正常或早到，统一记录为标准时间
+                roundedCheckIn = standardTime;
+            }
         }
+
+        // 3.2 下班打卡：向下取整到15分钟（早退惩罚）
+        if (roundedCheckOut) {
+            const [stdHour, stdMin] = rule.standardCheckOut.split(':').map(Number);
+            const standardTime = new Date(roundedCheckOut);
+            standardTime.setHours(stdHour, stdMin, 0, 0);
+
+            // 只有早退的情况才需要向下取整
+            if (roundedCheckOut < standardTime) {
+                roundedCheckOut = AttendanceEngine.floorTo15Min(roundedCheckOut);
+            } else {
+                // 正常或加班，统一记录为标准时间
+                roundedCheckOut = standardTime;
+            }
+        }
+
+        // 4. 自动计算状态 (如果没有手动指定状态)
+        if (!data.status) {
+            data.status = AttendanceEngine.calculateStatus(roundedCheckIn, roundedCheckOut, rule, employee);
+        }
+
+        // 5. 计算工时
+        const workHours = AttendanceEngine.calculateWorkHours(roundedCheckIn, roundedCheckOut, data.status);
+
+        // 6. 更新数据对象
+        data.checkInTime = roundedCheckIn;
+        data.checkOutTime = roundedCheckOut;
+        data.workHours = workHours;
 
         return await attendanceRepo.createAttendance(data, data.operator || 'SYSTEM');
     }

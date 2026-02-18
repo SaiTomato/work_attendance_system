@@ -2,7 +2,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "4000:3000"
+      - "13000:3000"
     volumes:
       - ./backend:/app
       - backend_node_modules:/app/node_modules # 1. 命名卷
@@ -18,7 +18,7 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "5173:5173"
+      - "15173:5173"
     volumes:
       - ./frontend:/app # 2. 扩大同步范围
       - frontend_node_modules:/app/node_modules # 3. 命名卷
@@ -48,7 +48,7 @@ services:
       - PGADMIN_DEFAULT_PASSWORD=admin
       - TZ=Asia/Tokyo
     ports:
-      - "8080:80"
+      - "18080:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
 

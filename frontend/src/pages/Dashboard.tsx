@@ -126,9 +126,9 @@ export const Dashboard: React.FC = () => {
             )}
 
             {/* Premium Stat Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                 <StatCard
-                    label="全従業員"
+                    label="全従業员"
                     value={stats.totalEmployees}
                     icon={<UsersIcon />}
                     color="indigo"
@@ -164,11 +164,40 @@ export const Dashboard: React.FC = () => {
                     onClick={() => navigateToFilter('exceptions')}
                 />
                 <StatCard
+                    label="欠勤"
+                    value={stats.absent}
+                    icon={<UserMinusIcon />}
+                    color="red"
+                    isCritical={stats.absent > 0}
+                    onClick={() => navigateToFilter('absent')}
+                />
+                <StatCard
+                    label="早退"
+                    value={stats.earlyLeave}
+                    icon={<BoltIcon />}
+                    color="orange"
+                    onClick={() => navigateToFilter('early_leave')}
+                />
+                <StatCard
                     label="休暇"
                     value={stats.leave}
                     icon={<CalendarIcon />}
                     color="amber"
                     onClick={() => navigateToFilter('leave')}
+                />
+                <StatCard
+                    label="リモート勤務"
+                    value={stats.wfh}
+                    icon={<HomeIcon />}
+                    color="teal"
+                    onClick={() => navigateToFilter('wfh')}
+                />
+                <StatCard
+                    label="現場勤務"
+                    value={stats.worksite}
+                    icon={<BuildingOfficeIcon />}
+                    color="purple"
+                    onClick={() => navigateToFilter('worksite')}
                 />
             </div>
 
@@ -258,7 +287,11 @@ const StatCard = ({ label, value, icon, color, isCritical, onClick }: any) => {
         rose: 'bg-rose-600 shadow-rose-200',
         amber: 'bg-amber-600 shadow-amber-200',
         slate: 'bg-slate-500 shadow-slate-200',
-        cyan: 'bg-cyan-600 shadow-cyan-200', // 新增 Cyan 颜色支持
+        cyan: 'bg-cyan-600 shadow-cyan-200',
+        teal: 'bg-teal-600 shadow-teal-200',
+        purple: 'bg-purple-600 shadow-purple-200',
+        red: 'bg-red-600 shadow-red-200',
+        orange: 'bg-orange-600 shadow-orange-200',
     };
 
     return (
@@ -303,6 +336,18 @@ const ClockIcon = () => (
 );
 const ArrowRightOnRectangleIcon = () => (
     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" /></svg>
+);
+const HomeIcon = () => (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+);
+const BuildingOfficeIcon = () => (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+);
+const UserMinusIcon = () => (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M22 10.5h-6m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" /></svg>
+);
+const BoltIcon = () => (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
 );
 
 export default Dashboard;

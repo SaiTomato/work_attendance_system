@@ -33,6 +33,9 @@ export interface DailyStats {
     late: number;
     absent: number;
     leave: number;
+    wfh: number; // 远程办公人数
+    worksite: number; // 现场工作人数
+    earlyLeave: number; // 早退人数
     unattended: number;
     successOut: number; // 新增：正常下班的人数
     exceptions: number;

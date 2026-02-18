@@ -55,7 +55,7 @@ async function main() {
         }),
         alice: await prisma.employee.create({
             data: {
-                employeeId: 'ALICE-001',
+                employeeId: 'EMP-001',
                 name: 'Alice Chang',
                 position: Position.STAFF,
                 status: EmployeeStatus.ACTIVE,
@@ -72,7 +72,8 @@ async function main() {
                 status: EmployeeStatus.ACTIVE,
                 hireDate: new Date('2020-01-11'),
                 departmentId: depts.tech.id,
-                userId: users.bob.id
+                userId: users.bob.id,
+                workLocation: WorkLocation.WORKSITE
             }
         }),
         charlie: await prisma.employee.create({
@@ -82,8 +83,9 @@ async function main() {
                 position: Position.STAFF,
                 status: EmployeeStatus.ACTIVE,
                 hireDate: new Date('2020-01-12'),
-                departmentId: depts.hr.id,
-                userId: users.charlie.id
+                departmentId: depts.sales.id,
+                userId: users.charlie.id,
+                workLocation: WorkLocation.REMOTE
             }
         }),
     };
@@ -99,8 +101,9 @@ async function main() {
     await prisma.attendanceRule.create({
         data: {
             name: '默认标准上班规则',
-            standardCheckIn: '10:00',
+            standardCheckIn: '11:00',
             standardCheckOut: '17:00',
+            allowedCheckInStart: '10:00',
             isDefault: true
         }
     });
@@ -109,7 +112,7 @@ async function main() {
     await (prisma as any).leaveRequest.createMany({
         data: [
             {
-                employeeId: 'EMP-003',
+                employeeId: 'EMP-002',
                 type: LeaveType.ANNUAL,
                 startDate: new Date('2026-02-01'),
                 endDate: new Date('2026-02-10'),
@@ -118,7 +121,7 @@ async function main() {
                 approvedBy: 'admin'
             },
             {
-                employeeId: 'ALICE-001',
+                employeeId: 'EMP-001',
                 type: LeaveType.SICK,
                 startDate: new Date('2026-02-06'),
                 endDate: new Date('2026-02-06'),

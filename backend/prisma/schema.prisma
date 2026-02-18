@@ -158,10 +158,11 @@ model Attendance {
   employeeId   String
   employeeName String
   date         String   // 格式: YYYY-MM-DD
-  status       String   // present, late, absent, leave, wfh, worksite
+  status       String   // present, late, absent, early_leave, leave, wfh, worksite
   
   checkInTime  DateTime?
   checkOutTime DateTime?
+  workHours    Float?    @default(0) // 工时（小时），扣除午休1小时
   
   employee     Employee @relation(fields: [employeeId], references: [employeeId])
   
