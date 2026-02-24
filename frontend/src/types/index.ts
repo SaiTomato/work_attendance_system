@@ -1,28 +1,21 @@
 export interface DailyStats {
-    date: string;
     totalEmployees: number;
-    present: number;
-    late: number;
-    absent: number;
-    leave: number;
-    wfh: number; // 远程办公
-    worksite: number; // 现场工作
-    earlyLeave: number; // 早退人数
-    unattended: number;
-    successOut: number;
-    exceptions: number;
+    unattended: number; // 未出勤
+    present: number;    // 出勤
+    checkout: number;   // 退勤
+    exception: number;  // 异常
+    leave: number;      // 休假
+    outside: number;    // 公司外
 }
 
 export interface AttendanceRecord {
     id: string;
     employeeId: string;
     employeeName: string;
-    date: string;
     status: string;
-    checkInTime?: string;
-    checkOutTime?: string;
-    workHours?: number; // 实绩工时
-    isModified?: boolean;
+    recordTime: string | null;
+    recorder: string;
+    reason: string | null;
 }
 
 export interface AuditLog {
@@ -53,25 +46,27 @@ export interface User {
 }
 
 export type Position = 'STAFF' | 'SUB_MANAGER' | 'MANAGER' | 'GENERAL_AFFAIRS' | 'CEO';
-export type EmployeeStatus = 'PROSPECTIVE' | 'ACTIVE' | 'ON_LEAVE' | 'RESIGNED' | 'TERMINATED';
+export type EmployeeStatus = 'PROSPECTIVE' | 'ACTIVE' | 'RESIGNED';
+export type DutyStatus = 'NORMAL' | 'PAID_LEAVE' | 'UNPAID_LEAVE'; // 追加出勤模式
 export type WorkLocation = 'OFFICE' | 'REMOTE' | 'WORKSITE';
 
 export interface EmployeeProfile {
     id: string;
     employeeId: string;
     name: string;
+    gender?: string;
+    age?: number;
+    phone?: string;
+    email?: string;
     position: Position;
     status: EmployeeStatus;
+    dutyStatus: DutyStatus; // 长期模式
+    dutyStatusEndDate?: string; // 模式结束时间
     workLocation: WorkLocation;
-    departmentId: string;
+    departmentId?: string;
     department?: {
         name: string;
         code: string;
     };
     hireDate?: string;
-    terminationDate?: string;
-    leaveStartDate?: string;
-    leaveEndDate?: string;
-    locationStartDate?: string;
-    locationEndDate?: string;
 }

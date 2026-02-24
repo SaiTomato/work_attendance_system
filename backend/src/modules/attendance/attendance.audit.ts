@@ -1,36 +1,32 @@
-
-import { AuditLog } from '../../types';
+import prisma from '../../db';
 
 export class AttendanceAuditService {
-    // Mock storage
-    private logs: AuditLog[] = [];
-
-    async log(entry: Omit<AuditLog, 'id' | 'operatedAt'>): Promise<void> {
-        const newLog: AuditLog = {
-            ...entry,
-            id: Math.random().toString(36).substr(2, 9),
-            operatedAt: new Date().toISOString()
-        };
-        this.logs.push(newLog);
-        console.log('[Audit] Recorded:', newLog);
+    async log(entry: {
+        targetId: string;
+        action: string;
+        before?: any;
+        after?: any;
+        operatedBy: string;
+        reason?: string;
+    }): Promise<void> {
+        try {
+            await prisma.auditLog.create({
+                data: {
+                    ...entry,
+                    before: entry.before ? JSON.parse(JSON.stringify(entry.before)) : undefined,
+                    after: entry.after ? JSON.parse(JSON.stringify(entry.after)) : undefined
+                }
+            });
+        } catch (e) {
+            console.warn('[Audit] Failed to persist log:', e);
+        }
     }
 
-    async getLogsByTargetId(targetId: string): Promise<AuditLog[]> {
-        // Mock fetch
-        // Return some verification data for demo if empty
-        if (this.logs.filter(l => l.targetId === targetId).length === 0) {
-            return [
-                {
-                    id: 'log-1',
-                    targetId: targetId,
-                    action: 'create',
-                    after: { status: 'present' },
-                    operatedBy: 'system',
-                    operatedAt: '2023-10-27T08:30:00Z'
-                }
-            ];
-        }
-        return this.logs.filter(l => l.targetId === targetId).sort((a, b) => b.operatedAt.localeCompare(a.operatedAt));
+    async getLogsByTargetId(targetId: string): Promise<any[]> {
+        return await prisma.auditLog.findMany({
+            where: { targetId },
+            orderBy: { operatedAt: 'desc' }
+        });
     }
 }
 

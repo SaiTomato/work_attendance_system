@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { fetchDashboardStats, fetchAttendanceList, punchAttendance } from '../services/attendance.api';
+import { fetchDashboardStats, punchAttendance, fetchDailyLogsToday, triggerDailyReset, triggerAutoCheckout } from '../services/attendance.api';
 import { DailyStats, AttendanceRecord } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
 // Skill: frontend-admin-view
-// Rules: 默认只展示“异常”，表格优先
 export const Dashboard: React.FC = () => {
     const [stats, setStats] = useState<DailyStats | null>(null);
-    const [exceptions, setExceptions] = useState<AttendanceRecord[]>([]);
+    const [mainLogs, setMainLogs] = useState<AttendanceRecord[]>([]);
+    const [totalLogs, setTotalLogs] = useState(0);
+    const [currentPage, setCurrentPage] = useState(1);
     const [error, setError] = useState<string | null>(null);
     const [punchError, setPunchError] = useState<string | null>(null);
     const [isPunching, setIsPunching] = useState(false);
@@ -17,25 +18,28 @@ export const Dashboard: React.FC = () => {
 
     const isViewer = user?.role === 'viewer';
 
-    const loadData = () => {
-        Promise.all([
-            fetchDashboardStats(),
-            fetchAttendanceList() // 默认仍然只取异常作为 Dashboard 里的简表展示
-        ]).then(([statsRes, exceptionsRes]) => {
-            if (statsRes.success && statsRes.data) {
-                setStats(statsRes.data);
-            } else if (statsRes.success === false) {
-                setError(statsRes.message || '統計データの取得に失敗しました');
-            }
+    const loadData = (page: number = 1) => {
+        fetchDashboardStats().then(res => {
+            if (res.success && res.data) setStats(res.data);
+        });
 
-            if (exceptionsRes.success && exceptionsRes.data) {
-                setExceptions(exceptionsRes.data);
+        // 默认显示今日实时打刻日志流 (支持分页)
+        fetchDailyLogsToday(page, 10).then(res => {
+            if (res.success && res.data) {
+                setMainLogs(res.data.logs);
+                setTotalLogs(res.data.total);
             }
         }).catch(err => {
-            setError('バックエンドに接続できません。ポート4000が动作しているか确认してください。');
+            setError('バックエンドに接続できません。');
             console.error(err);
         });
     };
+
+    useEffect(() => {
+        loadData(currentPage);
+        const timer = setInterval(() => loadData(currentPage), 30000);
+        return () => clearInterval(timer);
+    }, [currentPage]);
 
     const handlePunch = async () => {
         setIsPunching(true);
@@ -43,27 +47,49 @@ export const Dashboard: React.FC = () => {
         try {
             const res = await punchAttendance();
             if (res.success) {
-                alert('打卡成功！');
-                loadData();
+                alert('打刻成功！');
+                loadData(currentPage);
             } else {
-                setPunchError(res.message || '打卡失败');
+                setPunchError(res.message || '打刻失敗');
             }
         } catch (err: any) {
-            // 后端拦截触发后的 403 错误会在这里显示消息
-            const msg = err.response?.data?.message || '打卡被系统拒绝';
+            const msg = err.response?.data?.message || '打刻被システム拒否されました';
             setPunchError(msg);
         } finally {
             setIsPunching(false);
         }
     };
 
-    const navigateToFilter = (filter: string) => {
+    const selectCategory = (filter: string) => {
+        // 直接跳转到列表页并应用过滤器
         navigate(`/attendance/list?filter=${filter}`);
     };
 
-    useEffect(() => {
-        loadData();
-    }, []);
+    const handleDailyReset = async () => {
+        if (!window.confirm('全従業員の状態を「未出勤」にリセットしますか？（通常は翌朝に自動実行されます）')) return;
+        try {
+            const res = await triggerDailyReset();
+            if (res.success) {
+                alert(`リセット完了：${res.data?.count}名の状態を更新しました。`);
+                loadData(currentPage);
+            }
+        } catch (err: any) {
+            alert('リセットに失敗しました。');
+        }
+    };
+
+    const handleAutoCheckout = async () => {
+        if (!window.confirm('現在出勤中の全従業員を一括退勤処理しますか？（残業・自動退勤として記録されます）')) return;
+        try {
+            const res = await triggerAutoCheckout();
+            if (res.success) {
+                alert(`一括処理完了：${res.data?.count}名を退勤させました。`);
+                loadData(currentPage);
+            }
+        } catch (err: any) {
+            alert('一括退勤に失敗しました。');
+        }
+    };
 
     if (error) return (
         <div className="flex flex-col items-center justify-center min-h-[400px]">
@@ -88,7 +114,7 @@ export const Dashboard: React.FC = () => {
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-3xl font-bold text-slate-900 tracking-tight">ホームページ</h2>
-                    <p className="text-slate-500 mt-1">{stats.date} の統計データ</p>
+                    <p className="text-slate-500 mt-1">本日の統計データ</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <button
@@ -102,7 +128,7 @@ export const Dashboard: React.FC = () => {
                         {isPunching ? '処理中...' : '出勤/退勤打刻'}
                     </button>
                     {!isViewer && <button className="btn-premium bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 shadow-sm">レポート出力</button>}
-                    <button onClick={loadData} className="btn-premium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">データ更新</button>
+                    <button onClick={() => loadData(currentPage)} className="btn-premium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">データ更新</button>
                 </div>
             </header>
 
@@ -125,152 +151,192 @@ export const Dashboard: React.FC = () => {
                 </div>
             )}
 
-            {/* Premium Stat Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+            {/* Admin Console Section */}
+            {user?.role === 'admin' && (
+                <div className="bg-slate-900 rounded-3xl p-8 text-white shadow-2xl relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
+                        <BoltIcon />
+                    </div>
+                    <div className="relative z-10">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2 bg-indigo-500 rounded-lg">
+                                <UsersIcon />
+                            </div>
+                            <h3 className="text-xl font-black uppercase tracking-widest">System Administration</h3>
+                        </div>
+                        <p className="text-slate-400 mb-8 max-w-2xl font-medium">
+                            管理者専用ツール：システムの全従業員の状態を一括で操作できます。翌朝の初期化テストや、夜間の強制退勤処理に使用してください。
+                        </p>
+                        <div className="flex flex-wrap gap-4">
+                            <button
+                                onClick={handleDailyReset}
+                                className="px-6 py-3 bg-white text-slate-900 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-100 transition-colors shadow-lg active:scale-95"
+                            >
+                                全員を[未出勤]にリセット
+                            </button>
+                            <button
+                                onClick={handleAutoCheckout}
+                                className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-indigo-700 transition-colors shadow-lg active:scale-95"
+                            >
+                                出勤中を全員[自動退勤]
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* PROJECT_REFORM Stat Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 <StatCard
-                    label="全従業员"
+                    label="全従業員 (Total)"
                     value={stats.totalEmployees}
                     icon={<UsersIcon />}
                     color="indigo"
-                    onClick={() => navigateToFilter('all')}
+                    onClick={() => selectCategory('all')}
                 />
                 <StatCard
-                    label="正常出勤"
-                    value={stats.present}
-                    icon={<CheckCircleIcon />}
-                    color="emerald"
-                    onClick={() => navigateToFilter('present')}
-                />
-                <StatCard
-                    label="退勤完了"
-                    value={stats.successOut}
-                    icon={<ArrowRightOnRectangleIcon />}
-                    color="cyan"
-                    onClick={() => navigateToFilter('successOut')}
-                />
-                <StatCard
-                    label="未出勤 (待機)"
+                    label="未出勤 (Unattended)"
                     value={stats.unattended}
                     icon={<ClockIcon />}
                     color="slate"
-                    onClick={() => navigateToFilter('unattended')}
+                    onClick={() => selectCategory('unattended')}
                 />
                 <StatCard
-                    label="勤怠異常"
-                    value={stats.exceptions}
+                    label="出勤中 (Present)"
+                    value={stats.present}
+                    icon={<CheckCircleIcon />}
+                    color="emerald"
+                    onClick={() => selectCategory('present')}
+                />
+                <StatCard
+                    label="退勤済 (Checked Out)"
+                    value={stats.checkout}
+                    icon={<ArrowRightOnRectangleIcon />}
+                    color="cyan"
+                    onClick={() => selectCategory('checkout')}
+                />
+                <StatCard
+                    label="異常 (Exception)"
+                    value={stats.exception}
                     icon={<ExclamationTriangleIcon />}
                     color="rose"
-                    isCritical={stats.exceptions > 0}
-                    onClick={() => navigateToFilter('exceptions')}
+                    isCritical={stats.exception > 0}
+                    onClick={() => selectCategory('exceptions')}
                 />
                 <StatCard
-                    label="欠勤"
-                    value={stats.absent}
-                    icon={<UserMinusIcon />}
-                    color="red"
-                    isCritical={stats.absent > 0}
-                    onClick={() => navigateToFilter('absent')}
-                />
-                <StatCard
-                    label="早退"
-                    value={stats.earlyLeave}
-                    icon={<BoltIcon />}
-                    color="orange"
-                    onClick={() => navigateToFilter('early_leave')}
-                />
-                <StatCard
-                    label="休暇"
+                    label="休暇 (Leave)"
                     value={stats.leave}
                     icon={<CalendarIcon />}
                     color="amber"
-                    onClick={() => navigateToFilter('leave')}
+                    onClick={() => selectCategory('leave')}
                 />
                 <StatCard
-                    label="リモート勤務"
-                    value={stats.wfh}
-                    icon={<HomeIcon />}
-                    color="teal"
-                    onClick={() => navigateToFilter('wfh')}
-                />
-                <StatCard
-                    label="現場勤務"
-                    value={stats.worksite}
+                    label="公司外 (Offsite)"
+                    value={stats.outside}
                     icon={<BuildingOfficeIcon />}
                     color="purple"
-                    onClick={() => navigateToFilter('worksite')}
+                    onClick={() => selectCategory('outside')}
                 />
             </div>
 
-            {/* Exception Table Section */}
+            {/* 今日出勤ログ (Live Flow Limit 10) */}
             <div className="glass-card overflow-hidden">
                 <div className="px-8 py-6 border-b border-slate-200/60 flex items-center justify-between bg-white/50">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-rose-50 rounded-lg">
-                            <ExclamationTriangleIcon className="w-5 h-5 text-rose-600" />
+                        <div className="p-2 rounded-lg bg-indigo-50">
+                            <BoltIcon />
                         </div>
-                        <h3 className="text-xl font-bold text-slate-900">要注意スタッフレコード</h3>
+                        <h3 className="text-xl font-bold text-slate-900">
+                            リアルタイム・打刻ログ流
+                        </h3>
                     </div>
-                    <span className="px-3 py-1 bg-rose-100 text-rose-700 rounded-full text-xs font-bold uppercase tracking-wider">
-                        {exceptions.length} 件の異常を検知
-                    </span>
+                    <div className="flex items-center gap-4">
+                        <span className="text-xs font-bold text-slate-400 italic">Total Today: {totalLogs}</span>
+                        <div className="flex gap-1">
+                            <button
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                                className="p-1 hover:bg-slate-100 rounded-lg disabled:opacity-30 transition-colors"
+                            >
+                                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
+                            </button>
+                            <span className="flex items-center justify-center text-sm font-black w-10 h-8 bg-indigo-50 text-indigo-600 rounded-lg">{currentPage}</span>
+                            <button
+                                onClick={() => setCurrentPage(p => p + 1)}
+                                disabled={currentPage * 10 >= totalLogs}
+                                className="p-1 hover:bg-slate-100 rounded-lg disabled:opacity-30 transition-colors"
+                            >
+                                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <div className="overflow-x-auto">
                     <table className="min-w-full">
                         <thead>
                             <tr className="bg-slate-50/50">
-                                <th className="px-8 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">ID</th>
-                                <th className="px-8 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">氏名</th>
-                                <th className="px-8 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">例外タイプ</th>
-                                <th className="px-8 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">記録時間</th>
-                                <th className="px-8 py-4 text-right text-xs font-bold text-slate-400 uppercase tracking-widest">アクション</th>
+                                <th className="px-8 py-4 text-left text-xs font-black text-slate-400 uppercase tracking-widest leading-none">ID</th>
+                                <th className="px-8 py-4 text-left text-xs font-black text-slate-400 uppercase tracking-widest leading-none">氏名</th>
+                                <th className="px-8 py-4 text-left text-xs font-black text-slate-400 uppercase tracking-widest leading-none">記録された状態</th>
+                                <th className="px-8 py-4 text-left text-xs font-black text-slate-400 uppercase tracking-widest leading-none">時間</th>
+                                <th className="px-8 py-4 text-right text-xs font-black text-slate-400 uppercase tracking-widest leading-none">操作</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {exceptions.length === 0 ? (
+                            {mainLogs.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-8 py-12 text-center text-slate-400 italic">本日の異常は記録されていません。</td>
+                                    <td colSpan={5} className="px-8 py-16 text-center text-slate-400 italic font-medium tracking-tight">本日の打刻ログはまだありません。</td>
                                 </tr>
                             ) : (
-                                exceptions.map((record) => (
-                                    <tr key={record.id} className="hover:bg-indigo-50/30 transition-colors group">
-                                        <td className="px-8 py-5 text-sm font-mono text-slate-500">{record.employeeId}</td>
-                                        <td className="px-8 py-5">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-xs font-bold">
-                                                    {record.employeeName.charAt(0)}
+                                mainLogs.map((record: AttendanceRecord) => {
+                                    const st = record.status;
+                                    const isCritical = st.includes('异常') || st.includes('異常') || st.includes('迟到') || st.includes('遅刻') || st.includes('早退') || st.includes('欠勤');
+                                    const isNormal = st.includes('正常') && !st.startsWith('未出勤');
+                                    const isUnattended = st.startsWith('未出勤');
+
+                                    return (
+                                        <tr key={record.id} className="hover:bg-indigo-50/30 transition-colors group">
+                                            <td className="px-8 py-5 text-sm font-mono text-slate-500">{record.employeeId}</td>
+                                            <td className="px-8 py-5">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-[10px] font-black uppercase">
+                                                        {record.employeeName.charAt(0)}
+                                                    </div>
+                                                    <span className="text-sm font-bold text-slate-900 tracking-tight">{record.employeeName}</span>
                                                 </div>
-                                                <span className="text-sm font-semibold text-slate-900">{record.employeeName}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-8 py-5">
-                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border
-                                                ${record.status === 'late'
-                                                    ? 'bg-amber-50 text-amber-700 border-amber-100'
-                                                    : 'bg-rose-50 text-rose-700 border-rose-100'
-                                                }`}>
-                                                <span className={`w-1.5 h-1.5 rounded-full mr-2 ${record.status === 'late' ? 'bg-amber-400' : 'bg-rose-400'}`}></span>
-                                                {record.status === 'late' ? '遅刻' : '欠勤'}
-                                            </span>
-                                        </td>
-                                        <td className="px-8 py-5 text-sm text-slate-500">
-                                            {record.checkInTime ? new Date(record.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '未記録'}
-                                        </td>
-                                        <td className="px-8 py-5 text-right">
-                                            <Link to="/attendance/list" className="text-indigo-600 hover:text-indigo-900 text-sm font-bold transition-opacity opacity-0 group-hover:opacity-100">
-                                                詳細を表示 &rarr;
-                                            </Link>
-                                        </td>
-                                    </tr>
-                                ))
+                                            </td>
+                                            <td className="px-8 py-5">
+                                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black tracking-tight border shadow-sm
+                                                    ${isCritical
+                                                        ? 'bg-rose-50 text-rose-700 border-rose-100'
+                                                        : isNormal ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                                            : isUnattended ? 'bg-slate-50 text-slate-500 border-slate-200'
+                                                                : 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                                                    }`}>
+                                                    <span className={`w-1.5 h-1.5 rounded-full mr-2 ${isCritical ? 'bg-rose-400 animate-pulse' : isNormal ? 'bg-emerald-400' : isUnattended ? 'bg-slate-300' : 'bg-indigo-400'}`}></span>
+                                                    {st}
+                                                </span>
+                                            </td>
+                                            <td className="px-8 py-5 text-sm text-slate-500 font-black font-mono">
+                                                {record.recordTime ? new Date(record.recordTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '---'}
+                                            </td>
+                                            <td className="px-8 py-5 text-right">
+                                                <Link to={`/attendance/history/${record.employeeId}`} className="text-indigo-600 hover:text-indigo-900 text-[10px] font-black transition-opacity opacity-0 group-hover:opacity-100 uppercase tracking-tighter">
+                                                    History &rarr;
+                                                </Link>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>
                 </div>
 
                 <div className="px-8 py-4 bg-slate-50/50 border-t border-slate-200/60 text-right">
-                    <Link to="/attendance/list" className="inline-flex items-center text-indigo-600 font-bold hover:text-indigo-800 transition-colors gap-2">
-                        詳細なログを閲覧
+                    <Link to="/attendance/list" className="inline-flex items-center text-indigo-600 font-bold hover:text-indigo-800 transition-colors gap-2 text-xs uppercase tracking-widest">
+                        全ての詳細データ・リストへ
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
                     </Link>
                 </div>
@@ -288,10 +354,7 @@ const StatCard = ({ label, value, icon, color, isCritical, onClick }: any) => {
         amber: 'bg-amber-600 shadow-amber-200',
         slate: 'bg-slate-500 shadow-slate-200',
         cyan: 'bg-cyan-600 shadow-cyan-200',
-        teal: 'bg-teal-600 shadow-teal-200',
         purple: 'bg-purple-600 shadow-purple-200',
-        red: 'bg-red-600 shadow-red-200',
-        orange: 'bg-orange-600 shadow-orange-200',
     };
 
     return (
@@ -301,8 +364,8 @@ const StatCard = ({ label, value, icon, color, isCritical, onClick }: any) => {
         >
             <div className="flex items-start justify-between">
                 <div>
-                    <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">{label}</p>
-                    <h3 className={`text-4xl font-extrabold mt-2 tracking-tight ${isCritical ? 'text-rose-600' : 'text-slate-900'}`}>
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">{label}</p>
+                    <h3 className={`text-4xl font-black mt-2 tracking-tighter ${isCritical ? 'text-rose-600' : 'text-slate-900'}`}>
                         {value}
                     </h3>
                 </div>
@@ -310,8 +373,8 @@ const StatCard = ({ label, value, icon, color, isCritical, onClick }: any) => {
                     {icon}
                 </div>
             </div>
-            <div className="mt-4 flex items-center text-xs font-medium">
-                <span className="text-emerald-500 font-bold">查看详情</span>
+            <div className="mt-4 flex items-center text-[10px] font-black uppercase tracking-widest">
+                <span className="text-indigo-500">View Details</span>
                 <span className="text-slate-300 ml-1">➔</span>
             </div>
         </div>
@@ -320,34 +383,28 @@ const StatCard = ({ label, value, icon, color, isCritical, onClick }: any) => {
 
 // Simple icon components
 const UsersIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
 );
 const CheckCircleIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
 );
 const ExclamationTriangleIcon = ({ className }: any) => (
-    <svg className={className || "w-6 h-6"} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+    <svg className={className || "w-5 h-5"} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
 );
 const CalendarIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
 );
 const ClockIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
 );
 const ArrowRightOnRectangleIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" /></svg>
-);
-const HomeIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" /></svg>
 );
 const BuildingOfficeIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-);
-const UserMinusIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M22 10.5h-6m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" /></svg>
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
 );
 const BoltIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
+    <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
 );
 
 export default Dashboard;

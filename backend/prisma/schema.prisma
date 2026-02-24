@@ -17,7 +17,7 @@ enum UserRole {
   terminal
 }
 
-// 职位定义 (Requirement 2)
+// 职位定义
 enum Position {
   STAFF          // 员工
   SUB_MANAGER    // 次长
@@ -26,16 +26,21 @@ enum Position {
   CEO            // 社长
 }
 
-// 精细化状态定义 (Requirement 4)
+// 员工生命周期状态
 enum EmployeeStatus {
-  PROSPECTIVE // 内定（准备入职）
+  PROSPECTIVE // 内定
   ACTIVE      // 在职
-  ON_LEAVE    // 休假
   RESIGNED    // 离职
-  TERMINATED  // 辞退/开除
 }
 
-// 工作地点定义 (Requirement 3)
+// 出勤模式状态 (长期状态)
+enum DutyStatus {
+  NORMAL        // 正常上班
+  PAID_LEAVE    // 有休
+  UNPAID_LEAVE  // 无休
+}
+
+// 工作地点定义
 enum WorkLocation {
   OFFICE
   REMOTE
@@ -47,105 +52,61 @@ enum WorkLocation {
 model Department {
   id          String   @id @default(uuid())
   name        String
-  code        String   @unique // 例如: TECH, HR, SALES
+  code        String   @unique
   description String?
   
   employees   Employee[]
   users       User[]
-  rules       AttendanceRule[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  deletedAt   DateTime? // 软删除
+  deletedAt   DateTime?
 }
 
+// 【员工情报】
 model Employee {
-  id           String         @id @default(uuid())
-  employeeId   String         @unique // 工号: EMP-001
-  name         String
+  id              String         @id @default(uuid())
+  employeeId      String         @unique // 员工ID
+  name            String
+  gender          String?        // 性别
+  age             Int?           // 年龄
+  phone           String?        // 电话
+  email           String?        // email
   
-  // 职位与状态
-  position     Position       @default(STAFF)
-  status       EmployeeStatus @default(PROSPECTIVE)
+  departmentId    String?
+  department      Department?    @relation(fields: [departmentId], references: [id])
   
-  // 日期管理
-  hireDate        DateTime?   // 入职日期
-  terminationDate DateTime?   // 离职/开除日期
+  position        Position       @default(STAFF)
+  status          EmployeeStatus @default(PROSPECTIVE)
   
-  // 工作地点管理 (Requirement 3)
-  workLocation      WorkLocation @default(OFFICE)
+  // 出勤模式与地点
+  dutyStatus      DutyStatus     @default(NORMAL)
+  dutyStatusEndDate DateTime?    // 假期结束时间
+  workLocation    WorkLocation   @default(OFFICE)
   
-  // 关联属性
-  departmentId String
-  department   Department @relation(fields: [departmentId], references: [id])
+  hireDate        DateTime?
   
-  userId       String?    @unique
-  user         User?      @relation(fields: [userId], references: [id])
-  
-  attendance    Attendance[]
-  leaveRequests LeaveRequest[]  // 新增: 请假申请
-  rules         AttendanceRule[] // 个人特殊规则
-  auditLogs     AuditLog[]       // 员工档案变动日志
+  attendance      Attendance[]
+  user            User?          // 反向关联
 
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  deletedAt    DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  deletedAt       DateTime?
 }
 
-// --- 新增: 审批流模型 ---
-
-enum ApprovalStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum LeaveType {
-  ANNUAL    // 年假
-  SICK      // 病假
-  SPECIAL   // 特别假
-  BUSINESS  // 公出
-}
-
-model LeaveRequest {
-  id           String         @id @default(uuid())
-  employeeId   String
-  employee     Employee       @relation(fields: [employeeId], references: [employeeId])
-  
-  type         LeaveType      @default(ANNUAL)
-  startDate    DateTime
-  endDate      DateTime
-  reason       String?
-  
-  status       ApprovalStatus @default(PENDING)
-  approvedBy   String?        // 审批人用户名
-  isReadByEmployee Boolean    @default(false) // 新增: 员工是否已查看结果
-  
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-}
-
-// --- 新增: 日历/节假日管理 ---
-
-model Holiday {
-  id          String   @id @default(uuid())
-  date        String   @unique // YYYY-MM-DD
-  name        String   // 例如: 元旦, 春节, 公司创立纪念日
-  isWorkday   Boolean  @default(false) // 调休时可能为 true
-  
-  createdAt   DateTime @default(now())
-}
-
+// 【登入情报】
 model User {
   id           String     @id @default(uuid())
-  username     String     @unique
+  username     String     @unique // 用户ID
   password     String
   role         UserRole   @default(viewer)
   
+  // 对于 admin 和 terminal，employeeId 为 null
+  employeeId   String?    @unique
+  employee     Employee?  @relation(fields: [employeeId], references: [employeeId])
+  
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id])
-  
-  employee     Employee?
   
   refreshTokens RefreshToken[]
 
@@ -153,66 +114,21 @@ model User {
   updatedAt    DateTime   @updatedAt
 }
 
+// 【出勤记录】 (流水账模式)
 model Attendance {
   id           String   @id @default(uuid())
   employeeId   String
-  employeeName String
-  date         String   // 格式: YYYY-MM-DD
-  status       String   // present, late, absent, early_leave, leave, wfh, worksite
-  
-  checkInTime  DateTime?
-  checkOutTime DateTime?
-  workHours    Float?    @default(0) // 工时（小时），扣除午休1小时
-  
+  status       String   // "出勤-正常", "出勤-迟到", "退勤-正常", "异常-缺勤", "公司外-现场", "休假-有休" 等
+  recorder     String   // 记录者 (username 或 "SYSTEM" 或 "QR_SCANNER")
+  recordTime   DateTime @default(now()) // 记录时间 (系统即时生成)
+  reason       String?  // 记录理由 (管理员修改时填写)
+
   employee     Employee @relation(fields: [employeeId], references: [employeeId])
-  
-  auditLogs    AuditLog[]
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  deletedAt    DateTime?
+  @@index([employeeId, recordTime])
 }
 
-model AttendanceRule {
-  id              String   @id @default(uuid())
-  name            String   // 规则名称，例如“标准办公室时间”
-  standardCheckIn String   // 格式: "09:00"
-  standardCheckOut String  // 格式: "18:00"
-  allowedCheckInStart String @default("05:00") // 允许开始打卡时间 (Requirement: 可开始打卡的时间)
-  maxOvertimeHours   Int    @default(3)       // 规定加班时长 (单位: 小时)
-  lateGracePeriod Int      @default(5)  // 宽限期（分钟）
-  absentThreshold Int      @default(120) // 超过多久算缺勤（分钟）
-  isDefault       Boolean  @default(false)
-
-  // 优先级: 个人 > 部门 > 全局默认
-  departmentId    String?
-  department      Department? @relation(fields: [departmentId], references: [id])
-  
-  employees       Employee[]
-
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-}
-
-model AuditLog {
-  id           String   @id @default(uuid())
-  
-  // 关联考勤 (可选)
-  attendanceId String?
-  attendance   Attendance? @relation(fields: [attendanceId], references: [id])
-  
-  // 关联员工档案 (可选)
-  employeeId   String?
-  employee     Employee?   @relation(fields: [employeeId], references: [id])
-
-  action       String   // CREATE, UPDATE, DELETE, OVERRIDE
-  before       Json?    // 修改前的数据截屏
-  after        Json?    // 修改后的数据截屏
-  operatedBy   String   // 操作人用户名
-  reason       String?  // 修改理由
-  operatedAt   DateTime @default(now())
-}
-
+// 【RefreshToken】
 model RefreshToken {
   id        String   @id @default(uuid())
   tokenHash String   @unique
@@ -221,4 +137,29 @@ model RefreshToken {
   expiresAt DateTime
   revokedAt DateTime?
   createdAt DateTime @default(now())
+}
+
+// 基础规则配置 (保留作为系统全局时间常数)
+model AttendanceRule {
+  id              String   @id @default(uuid())
+  name            String
+  standardCheckIn String   // "09:00"
+  standardCheckOut String  // "18:00"
+  windowStart     String   @default("07:00") // 可打卡开始时间
+  windowEnd       String   @default("14:00") // 可打卡结束时间
+  autoCheckoutTime String  @default("20:00") // 自动判定退勤时间
+  isDefault       Boolean  @default(false)
+}
+// --- 审计日志 ---
+model AuditLog {
+  id          String   @id @default(uuid())
+  targetId    String   // 目标 ID (员工 id 或 出勤记录 id)
+  action      String   // "CREATE", "UPDATE", "DELETE", "PUNCH"
+  before      Json?    // 变更前数据
+  after       Json?    // 变更后数据
+  operatedBy  String   // 操作人 (username)
+  operatedAt  DateTime @default(now())
+  reason      String?  // 理由
+
+  @@index([targetId])
 }

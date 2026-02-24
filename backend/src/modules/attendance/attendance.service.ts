@@ -1,202 +1,233 @@
 import { attendanceRepo } from './attendance.repo';
-import { DailyStats, AttendanceRecord } from '../../types';
 import { AttendanceEngine } from '../../services/attendanceEngine';
+import { attendanceAudit } from './attendance.audit';
 import prisma from '../../db';
 
 export class AttendanceService {
-    async getDailyRecords(dateStr?: string, filter?: string): Promise<AttendanceRecord[]> {
+    async getDailyRecords(dateStr?: string, filter?: string) {
         const date = dateStr ? new Date(dateStr) : new Date();
         return await attendanceRepo.getDailyRecords(date, filter);
     }
 
-    async getDashboardStats(): Promise<DailyStats> {
+    async getAllLogsToday(page: number = 1, limit: number = 10) {
+        return await attendanceRepo.getAllLogsToday(page, limit);
+    }
+
+    async getDashboardStats() {
         const today = new Date();
         return await attendanceRepo.getDailyStats(today);
     }
 
-    async getEmployeeHistory(employeeId: string): Promise<AttendanceRecord[]> {
+    async getEmployeeHistory(employeeId: string) {
         return await attendanceRepo.getEmployeeHistory(employeeId);
     }
 
-    async getAuditLogs(recordId: string) {
-        return await attendanceRepo.getAuditLogs(recordId);
+    async getAuditLogs(targetId: string) {
+        return await attendanceAudit.getLogsByTargetId(targetId);
     }
 
-    /**
-     * 创建考勤记录，自动计算状态
-     */
-    async createAttendance(data: any): Promise<AttendanceRecord> {
-        // 1. 获取员工档案
+    async createAttendance(data: {
+        employeeId: string;
+        recorder: string;
+        action?: 'PUNCH' | 'AUTO' | 'MANUAL';
+        targetStatus?: string; // 仅管理员手动指定时有用
+        reason?: string;
+    }) {
+        // 1. 获取员工信息
         const employee = await prisma.employee.findUnique({
             where: { employeeId: data.employeeId }
         });
-
         if (!employee) throw new Error('Employee not found');
 
-        // 2. 【核心新增】检测当前是否存在未处理的考勤异常
-        // 如果是管理员/管理员手动补录，可能需要跳过此逻辑，但对于员工自助打卡必须拦截
-        const anomaly = await attendanceRepo.getEmployeeAnomaly(data.employeeId);
-        if (anomaly) {
-            throw new Error(anomaly.message); // 抛出具体的异常信息给前端
+        // 2. 获取当前最新的规则
+        const rule = await prisma.attendanceRule.findFirst({ where: { isDefault: true } });
+        if (!rule) throw new Error('System rule not configured');
+
+        // 3. 获取该员工今日此刻之前的最新状态
+        const latest = await attendanceRepo.getLatestRecordToday(data.employeeId);
+        const currentStatus = latest?.status || null;
+
+        // 4. 判定下一个状态
+        let nextStatus: string;
+        if (data.action === 'MANUAL' && data.targetStatus) {
+            nextStatus = data.targetStatus;
+        } else {
+            nextStatus = AttendanceEngine.determineNextStatus(
+                currentStatus,
+                new Date(),
+                rule,
+                data.action || 'PUNCH'
+            );
         }
 
-        const rule = await this.getApplicableRule(data.employeeId);
-
-        // 3. 应用时间取整规则
-        let roundedCheckIn = data.checkInTime ? new Date(data.checkInTime) : null;
-        let roundedCheckOut = data.checkOutTime ? new Date(data.checkOutTime) : null;
-
-        // 3.1 上班打卡：向上取整到15分钟（迟到惩罚）
-        if (roundedCheckIn) {
-            const [stdHour, stdMin] = rule.standardCheckIn.split(':').map(Number);
-            const standardTime = new Date(roundedCheckIn);
-            standardTime.setHours(stdHour, stdMin, 0, 0);
-
-            // 只有迟到的情况才需要向上取整
-            if (roundedCheckIn > standardTime) {
-                roundedCheckIn = AttendanceEngine.ceilTo15Min(roundedCheckIn);
-            } else {
-                // 正常或早到，统一记录为标准时间
-                roundedCheckIn = standardTime;
-            }
+        // 5. 拦截重复或非法流转
+        if (nextStatus === currentStatus && data.action === 'PUNCH') {
+            throw new Error(`当前状态已是 [${currentStatus}]，无需重复操作`);
         }
 
-        // 3.2 下班打卡：向下取整到15分钟（早退惩罚）
-        if (roundedCheckOut) {
-            const [stdHour, stdMin] = rule.standardCheckOut.split(':').map(Number);
-            const standardTime = new Date(roundedCheckOut);
-            standardTime.setHours(stdHour, stdMin, 0, 0);
-
-            // 只有早退的情况才需要向下取整
-            if (roundedCheckOut < standardTime) {
-                roundedCheckOut = AttendanceEngine.floorTo15Min(roundedCheckOut);
-            } else {
-                // 正常或加班，统一记录为标准时间
-                roundedCheckOut = standardTime;
-            }
-        }
-
-        // 4. 自动计算状态 (如果没有手动指定状态)
-        if (!data.status) {
-            data.status = AttendanceEngine.calculateStatus(roundedCheckIn, roundedCheckOut, rule, employee);
-        }
-
-        // 5. 计算工时
-        const workHours = AttendanceEngine.calculateWorkHours(roundedCheckIn, roundedCheckOut, data.status);
-
-        // 6. 更新数据对象
-        data.checkInTime = roundedCheckIn;
-        data.checkOutTime = roundedCheckOut;
-        data.workHours = workHours;
-
-        return await attendanceRepo.createAttendance(data, data.operator || 'SYSTEM');
-    }
-
-    async updateAttendance(id: string, status: string, operator: string, reason: string): Promise<void> {
-        // 1. 处理虚拟 ID (例如: missing-EMP001, leave-EMP001, wait-EMP001)
-        if (id.includes('-')) {
-            const employeeId = id.split('-')[1];
-            const date = new Date().toISOString().split('T')[0];
-
-            // 获取员工信息用于补录
-            const employee = await prisma.employee.findUnique({ where: { employeeId } });
-            if (!employee) throw new Error('Employee not found');
-
-            // 如果管理员将其修正为 "正常"，则自动补全上班时间 (否则扫码端依然会拦截)
-            let checkInTime = null;
-            if (status === 'present' || status === 'late') {
-                const rule = await this.getApplicableRule(employeeId);
-                const [h, m] = rule.standardCheckIn.split(':').map(Number);
-                const baseDate = new Date();
-                baseDate.setHours(h, m, 0, 0);
-                checkInTime = baseDate;
-            }
-
-            await attendanceRepo.createAttendance({
-                employeeId,
-                employeeName: employee.name,
-                date,
-                status,
-                checkInTime,
-                operator
-            }, operator);
-
-            return;
-        }
-
-        // 2. 原有的更新逻辑
-        await attendanceRepo.updateAttendance(id, status, operator, reason);
-    }
-
-    async deleteAttendance(id: string, operator: string): Promise<boolean> {
-        return await attendanceRepo.deleteAttendance(id, operator);
+        // 6. 追加记录
+        return await attendanceRepo.createAttendance({
+            employeeId: data.employeeId,
+            status: nextStatus,
+            recorder: data.recorder,
+            reason: data.reason
+        });
     }
 
     /**
-     * 获取适用于该员工的考勤规则
-     * 优先级: 个人 -> 部门 -> 全局默认
+     * 【每日全员重置】 07:00 逻辑
      */
-    private async getApplicableRule(employeeId: string) {
-        const employee = await prisma.employee.findUnique({
-            where: { employeeId },
-            include: {
-                rules: { where: { isDefault: false }, take: 1 },
-                department: {
-                    include: { rules: { where: { isDefault: false }, take: 1 } }
-                }
-            }
+    async dailyReset() {
+        // 1. 获取所有在职员工
+        const activeEmployees = await prisma.employee.findMany({
+            where: { status: 'ACTIVE', deletedAt: null }
         });
 
-        if (employee?.rules?.[0]) return employee.rules[0];
-        if (employee?.department?.rules?.[0]) return employee.department.rules[0];
-
-        // 最后的降级：全局默认规则
-        const defaultRule = await prisma.attendanceRule.findFirst({
-            where: { isDefault: true }
-        });
-
-        if (!defaultRule) {
-            throw new Error('No attendance rules configured in the system');
+        const now = new Date();
+        const day = now.getDay();
+        if (day === 0 || day === 6) {
+            console.log('[CRON] 週末のため、リセットをスキップします。');
+            return { count: 0, skipped: true };
         }
 
-        return defaultRule;
+        const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        let updatedCount = 0;
+        for (const emp of activeEmployees) {
+            let currentDutyStatus = emp.dutyStatus;
+            let currentWorkLocation = emp.workLocation;
+
+            // 2. 检查假期是否到期 (如果今日凌晨已超过假期结束日，则恢复正常)
+            if (emp.dutyStatusEndDate && emp.dutyStatusEndDate < todayMidnight) {
+                // 假期已过，重置为正常上班
+                await prisma.employee.update({
+                    where: { id: emp.id },
+                    data: { dutyStatus: 'NORMAL', dutyStatusEndDate: null }
+                });
+                currentDutyStatus = 'NORMAL';
+            }
+
+            // 3. 根据状态决定今日初始化记录
+            let targetStatus = '未出勤-正常';
+            const recorder = 'SYSTEM';
+
+            if (currentDutyStatus === 'PAID_LEAVE') {
+                targetStatus = '休假-有休';
+            } else if (currentDutyStatus === 'UNPAID_LEAVE') {
+                targetStatus = '休假-无休';
+            } else {
+                // 正常上班的情况，再看地点
+                if (currentWorkLocation === 'REMOTE') {
+                    targetStatus = '公司外-远程';
+                } else if (currentWorkLocation === 'WORKSITE') {
+                    targetStatus = '公司外-现场';
+                } else {
+                    targetStatus = '未出勤-正常';
+                }
+            }
+
+            await attendanceRepo.createAttendance({
+                employeeId: emp.employeeId,
+                status: targetStatus,
+                recorder: recorder,
+                recordTime: now,
+                reason: 'Daily System Reset'
+            });
+            updatedCount++;
+        }
+
+        return { count: updatedCount };
     }
 
-    async syncLeaveToAttendance(leaveId: string) {
-        const leave = await prisma.leaveRequest.findUnique({
-            where: { id: leaveId },
-            include: { employee: true }
+    /**
+     * 【自动缺勤判定】 14:00 逻辑
+     */
+    async checkAbsence() {
+        const now = new Date();
+        // 仅针对 [正常上班] 且 [在办公室] 的员工进行自动判定
+        const targetEmployees = await prisma.employee.findMany({
+            where: {
+                status: 'ACTIVE',
+                dutyStatus: 'NORMAL',
+                workLocation: 'OFFICE',
+                deletedAt: null
+            }
         });
 
-        if (!leave || leave.status !== 'APPROVED') return;
-
-        const start = new Date(leave.startDate);
-        const end = new Date(leave.endDate);
-
-        // 遍历请假期间的每一天
-        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-            const dateStr = d.toISOString().split('T')[0];
-
-            const existing = await prisma.attendance.findFirst({
-                where: {
-                    employeeId: leave.employeeId,
-                    date: dateStr,
-                    deletedAt: null
-                }
-            });
-
-            if (!existing) {
-                // 如果当天没有记录，直接创建一个 leave 状态的考勤
+        let count = 0;
+        for (const emp of targetEmployees) {
+            const latest = await attendanceRepo.getLatestRecordToday(emp.employeeId);
+            // 如果到了 14:00 还是“未出勤”状态，则判定为缺勤
+            if (!latest || latest.status.startsWith('未出勤')) {
                 await attendanceRepo.createAttendance({
-                    employeeId: leave.employeeId,
-                    employeeName: leave.employee.name,
-                    date: dateStr,
-                    status: 'leave',
-                }, 'SYSTEM_LEAVE_SYNC');
-            } else if (existing.status === 'absent' || existing.status === 'late') {
-                // 如果原本是缺勤/迟到（可能是先判定的异常），修正为 leave
-                await attendanceRepo.updateAttendance(existing.id, 'leave', 'SYSTEM_LEAVE_SYNC', 'Leave ApprovedSync');
+                    employeeId: emp.employeeId,
+                    status: '异常-缺勤',
+                    recorder: 'SYSTEM_ABSENCE_CHECK',
+                    recordTime: now,
+                    reason: '超过14:00未打卡，系统自动判定缺勤'
+                });
+                count++;
             }
+        }
+        return { count };
+    }
+
+    /**
+     * 【一键自动退勤】强制对所有打过卡的人进行退勤处理
+     */
+    async autoCheckoutAll() {
+        // 仅针对 [正常上班] 且 [在办公室] 的员工进行自动判定
+        const targetEmployees = await prisma.employee.findMany({
+            where: {
+                status: 'ACTIVE',
+                dutyStatus: 'NORMAL',
+                workLocation: 'OFFICE',
+                deletedAt: null
+            }
+        });
+
+        let count = 0;
+        const now = new Date();
+        for (const emp of targetEmployees) {
+            const latest = await attendanceRepo.getLatestRecordToday(emp.employeeId);
+            // 只有当前处于“出勤”状态的人才需要退勤
+            if (latest?.status.startsWith('出勤')) {
+                await this.createAttendance({
+                    employeeId: emp.employeeId,
+                    recorder: 'SYSTEM_AUTO_CHECKOUT',
+                    action: 'AUTO'
+                });
+                count++;
+            }
+        }
+        return { count };
+    }
+
+    async updateAttendance(id: string, status: string, operator: string, reason: string) {
+        // 在新系统中，"更新"就是"追加一条由管理员指定的状态"
+        // 我们需要先根据记录 ID 找到员工 ID
+        const oldRecord = await prisma.attendance.findUnique({ where: { id } });
+        if (!oldRecord) throw new Error('Record not found');
+
+        return await this.createAttendance({
+            employeeId: oldRecord.employeeId,
+            recorder: operator,
+            action: 'MANUAL',
+            targetStatus: status,
+            reason: reason
+        });
+    }
+
+    async deleteAttendance(id: string, operator: string): Promise<boolean> {
+        // 流水账系统原则上不允许删除，但由于是实验项目，我们暂时保留软删除逻辑
+        try {
+            await prisma.attendance.update({
+                where: { id },
+                data: { status: 'DELETED-' + operator }
+            });
+            return true;
+        } catch {
+            return false;
         }
     }
 }

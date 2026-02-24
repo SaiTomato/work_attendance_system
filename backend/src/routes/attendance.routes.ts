@@ -65,23 +65,17 @@ router.post('/scan', requireRole(['terminal', 'admin']), async (req: Request, re
         const timestamp = parseInt(timestampStr);
 
         if (Date.now() - timestamp > 30000) {
-            return errorResponse(res, '打卡码已过期，请重新生成 (Code expired)', 403);
+            return errorResponse(res, '打卡码已过期，请重新生成', 403);
         }
-
-        // 查找员工并执行打卡逻辑 (复用 createAttendance 包含 Anomaly 拦截)
-        const employee = await prisma.employee.findUnique({ where: { employeeId } });
-        if (!employee) return errorResponse(res, 'Employee not found', 404);
 
         const record = await attendanceService.createAttendance({
             employeeId,
-            employeeName: employee.name,
-            date: new Date().toISOString().split('T')[0],
-            operator: 'QR_SCANNER'
+            recorder: 'QR_SCANNER',
+            action: 'PUNCH'
         });
 
         successResponse(res, record, '扫码打卡成功');
     } catch (error: any) {
-        // 如果触发了 Anomaly 拦截，error.message 会通过这里返回给扫码设备
         errorResponse(res, error.message, 403);
     }
 });
@@ -89,7 +83,6 @@ router.post('/scan', requireRole(['terminal', 'admin']), async (req: Request, re
 // 3. 自助打卡 (遗留按钮接口 - 禁止终端账号)
 router.post('/punch', requireRole(['admin', 'manager', 'hr', 'viewer']), async (req: Request, res: Response) => {
     try {
-        // 通过关联的 User 找到对应的 EmployeeID
         const user = await prisma.user.findUnique({
             where: { id: req.user?.id },
             include: { employee: true }
@@ -101,25 +94,25 @@ router.post('/punch', requireRole(['admin', 'manager', 'hr', 'viewer']), async (
 
         const record = await attendanceService.createAttendance({
             employeeId: user.employee.employeeId,
-            employeeName: user.employee.name,
-            date: new Date().toISOString().split('T')[0],
-            checkInTime: new Date().toISOString(),
-            operator: req.user?.username
+            recorder: user.username,
+            action: 'PUNCH'
         });
 
         successResponse(res, record, '打卡成功');
     } catch (error: any) {
-        // 如果后端 throw 了 anomaly.message，这里会捕获并返回给前端
         errorResponse(res, error.message, 403);
     }
 });
 
-// 2. 管理员手动创建记录 (需权限)
-router.post('/', requireRole(['admin', 'hr', 'manager']), createAttendanceValidator, validate, async (req: Request, res: Response) => {
+// 4. 管理员手动创建记录 (需权限)
+router.post('/', requireRole(['admin', 'hr', 'manager']), async (req: Request, res: Response) => {
     try {
         const record = await attendanceService.createAttendance({
-            ...req.body,
-            operator: req.user?.username
+            employeeId: req.body.employeeId,
+            recorder: req.user?.username || 'admin',
+            action: 'MANUAL',
+            targetStatus: req.body.status,
+            reason: req.body.reason
         });
         successResponse(res, record, 'Record created');
     } catch (error: any) {
@@ -127,8 +120,8 @@ router.post('/', requireRole(['admin', 'hr', 'manager']), createAttendanceValida
     }
 });
 
-// 3. 修改记录
-router.put('/:id', requireRole(['admin', 'hr']), updateAttendanceValidator, validate, async (req: Request, res: Response) => {
+// 5. 修改记录
+router.put('/:id', requireRole(['admin', 'hr']), async (req: Request, res: Response) => {
     try {
         await attendanceService.updateAttendance(
             req.params.id,
@@ -142,7 +135,7 @@ router.put('/:id', requireRole(['admin', 'hr']), updateAttendanceValidator, vali
     }
 });
 
-// 4. 统计数据 (管理层权限)
+// 6. 统计数据 (管理层权限)
 router.get('/dashboard/stats', requireRole(['admin', 'manager', 'hr']), async (req: Request, res: Response) => {
     try {
         const stats = await attendanceService.getDashboardStats();
@@ -152,7 +145,7 @@ router.get('/dashboard/stats', requireRole(['admin', 'manager', 'hr']), async (r
     }
 });
 
-// 5. 详细记录列表 (支持过滤: all, present, absent, late, leave, unattended, successOut)
+// 7. 详细记录列表
 router.get('/list', requireRole(['admin', 'manager', 'hr']), async (req: Request, res: Response) => {
     try {
         const date = req.query.date as string;
@@ -164,27 +157,51 @@ router.get('/list', requireRole(['admin', 'manager', 'hr']), async (req: Request
     }
 });
 
-// 6. 个人历史 (本人或管理层)
+// 7.5 今日流水日志 (日志流)
+router.get('/logs/today', requireRole(['admin', 'manager', 'hr']), async (req: Request, res: Response) => {
+    try {
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 10;
+        const result = await attendanceService.getAllLogsToday(page, limit);
+        successResponse(res, result);
+    } catch (error: any) {
+        errorResponse(res, error.message);
+    }
+});
+
+// 8. 每日重置触发器 (Internal/Admin)
+router.post('/reset', requireRole(['admin']), async (req: Request, res: Response) => {
+    try {
+        const result = await attendanceService.dailyReset();
+        successResponse(res, result, 'System status reset for all active employees');
+    } catch (error: any) {
+        errorResponse(res, error.message);
+    }
+});
+
+// 8.5 一键自动退勤触发器
+router.post('/auto-checkout', requireRole(['admin']), async (req: Request, res: Response) => {
+    try {
+        const result = await attendanceService.autoCheckoutAll();
+        successResponse(res, result, `Successfully processed auto-checkout for ${result.count} employees`);
+    } catch (error: any) {
+        errorResponse(res, error.message);
+    }
+});
+
+// 9. 个人历史
 router.get('/history/:employeeId', async (req: Request, res: Response) => {
     try {
         const targetEmployeeId = req.params.employeeId;
-
-        // 如果是普通员工，校验是否是看自己的
         if (req.user?.role === 'viewer') {
             const user = await prisma.user.findUnique({
                 where: { id: req.user.id },
                 include: { employee: true }
             });
             if (user?.employee?.employeeId !== targetEmployeeId) {
-                return errorResponse(res, '权限不足：无法查看他人考勤记录', 403);
+                return errorResponse(res, '权限不足', 403);
             }
         }
-
-        // 禁止终端账号查看任何历史
-        if (req.user?.role === 'terminal') {
-            return errorResponse(res, '权限不足：终端账号无法查看历史', 403);
-        }
-
         const history = await attendanceService.getEmployeeHistory(targetEmployeeId);
         successResponse(res, history);
     } catch (error: any) {
@@ -192,25 +209,11 @@ router.get('/history/:employeeId', async (req: Request, res: Response) => {
     }
 });
 
-// 7. 审计日志 (Admin/HR 权限)
-router.get('/audit/:recordId', requireRole(['admin', 'hr']), async (req: Request, res: Response) => {
+// 10. 获取单条记录的审计日志
+router.get('/:id/audit', requireRole(['admin', 'hr', 'manager']), async (req: Request, res: Response) => {
     try {
-        const logs = await attendanceService.getAuditLogs(req.params.recordId);
+        const logs = await attendanceService.getAuditLogs(req.params.id);
         successResponse(res, logs);
-    } catch (error: any) {
-        errorResponse(res, error.message);
-    }
-});
-
-// 8. 软删除记录
-router.delete('/:id', requireRole(['admin', 'hr']), async (req: Request, res: Response) => {
-    try {
-        const success = await attendanceService.deleteAttendance(req.params.id, req.user?.username || 'unknown');
-        if (success) {
-            successResponse(res, null, 'Record deleted');
-        } else {
-            errorResponse(res, 'Record not found', 404);
-        }
     } catch (error: any) {
         errorResponse(res, error.message);
     }

@@ -27,39 +27,36 @@ export type EmployeeStatus = 'PROSPECTIVE' | 'ACTIVE' | 'ON_LEAVE' | 'RESIGNED' 
 export type WorkLocation = 'OFFICE' | 'REMOTE' | 'WORKSITE';
 
 export interface DailyStats {
-    date: string;
     totalEmployees: number;
-    present: number;
-    late: number;
-    absent: number;
-    leave: number;
-    wfh: number; // 远程办公人数
-    worksite: number; // 现场工作人数
-    earlyLeave: number; // 早退人数
-    unattended: number;
-    successOut: number; // 新增：正常下班的人数
-    exceptions: number;
+    unattended: number; // 未出勤
+    present: number;    // 出勤
+    checkout: number;   // 退勤
+    exception: number;  // 异常
+    leave: number;      // 休假
+    outside: number;    // 公司外
 }
 
 export interface AttendanceRecord {
     id: string;
     employeeId: string;
     employeeName: string;
-    date: string;
-    status: string; // 'present', 'late', 'absent', 'leave', 'wfh', 'worksite'
-    checkInTime?: string;
-    checkOutTime?: string;
+    status: string;
+    recordTime: string | null;
+    recorder: string;
+    reason: string | null;
 }
 
 export interface EmployeeProfile {
     id: string;
     employeeId: string;
     name: string;
+    gender?: string;
+    age?: number;
+    phone?: string;
+    email?: string;
     position: Position;
     status: EmployeeStatus;
     workLocation: WorkLocation;
     departmentName?: string;
     hireDate?: string;
-    leaveEndDate?: string;
-    locationEndDate?: string;
 }

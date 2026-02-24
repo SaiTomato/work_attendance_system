@@ -3,487 +3,197 @@ import prisma from '../../db';
 
 export class AttendanceRepo {
     /**
-     * 获取指定日期的所有考勤记录/详情 (支持过滤: all, present, absent, late, leave, successOut)
+     * 获取指定日期的员工最新出勤状态列表 (支持过滤)
      */
-    async getDailyRecords(date: Date, filterType: string = 'exceptions'): Promise<AttendanceRecord[]> {
-        const dateStr = date.toISOString().split('T')[0];
-        const now = new Date();
+    async getDailyRecords(date: Date, filterType: string = 'all'): Promise<AttendanceRecord[]> {
+        const startOfDay = new Date(date);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(date);
+        endOfDay.setHours(23, 59, 59, 999);
 
-        // 1. 获取所有在职且应出席的员工
+        // 1. 获取所有在职员工
         const totalEmployees = await prisma.employee.findMany({
-            where: {
-                OR: [
-                    { status: 'ACTIVE' },
-                    {
-                        AND: [
-                            { status: 'PROSPECTIVE' },
-                            { hireDate: { lte: now } }
-                        ]
-                    }
-                ],
-                deletedAt: null
-            }
+            where: { status: 'ACTIVE', deletedAt: null }
         });
-
-        // 2. 获取今日已有记录 (包含审计日志以判断是否被手动修改过)
-        const records = await prisma.attendance.findMany({
-            where: { date: dateStr, deletedAt: null },
-            include: {
-                auditLogs: {
-                    where: { action: 'UPDATE' },
-                    take: 1
-                }
-            }
-        });
-
-        const recordMap = new Map();
-        records.forEach(r => recordMap.set(r.employeeId, r));
-
-        // 3. 获取通用规则与节假日信息
-        const [rule, holiday] = await Promise.all([
-            (prisma as any).attendanceRule.findFirst({ where: { isDefault: true } }),
-            (prisma as any).holiday.findUnique({ where: { date: dateStr } })
-        ]);
-
-        const isNonWorkingDay = (holiday && !holiday.isWorkday) || (!holiday && (now.getDay() === 0 || now.getDay() === 6));
-
-        const [stdH, stdM] = (rule?.standardCheckIn || '09:00').split(':').map(Number);
-        const [outH, outM] = (rule?.standardCheckOut || '18:00').split(':').map(Number);
-
-        const inDeadline = new Date(now);
-        inDeadline.setHours(stdH, stdM, 0, 0);
-
-        const outTime = new Date(now);
-        outTime.setHours(outH, outM, 0, 0);
-
-        const maxOvertime = rule?.maxOvertimeHours || 3;
-        const outGraceDeadline = new Date(outTime.getTime() + maxOvertime * 60 * 60 * 1000);
-
-        // 获取今日所有已审批的请假申请
-        const approvedLeaves = await (prisma as any).leaveRequest.findMany({
-            where: {
-                status: 'APPROVED',
-                startDate: { lte: now },
-                endDate: { gte: now }
-            }
-        });
-        const leaveMap = new Set(approvedLeaves.map((l: any) => l.employeeId));
 
         const fullList: AttendanceRecord[] = [];
 
-        // 4. 动态构建完整名单
-        totalEmployees.forEach(emp => {
-            const r = recordMap.get(emp.employeeId);
-            let finalRecord: any;
+        // 2. 遍历每个员工，获取当日最新的记录
+        for (const emp of totalEmployees) {
+            const latestRecord = await prisma.attendance.findFirst({
+                where: {
+                    employeeId: emp.employeeId,
+                    recordTime: { gte: startOfDay, lte: endOfDay }
+                } as any,
+                include: { employee: true } as any,
+                orderBy: [
+                    { recordTime: 'desc' },
+                    { id: 'desc' }
+                ] as any
+            }) as any;
 
-            if (!r) {
-                // 如果当天没有记录，可能是还没打卡或者请假
-                if (leaveMap.has(emp.employeeId)) {
-                    finalRecord = {
-                        id: `leave-${emp.employeeId}`,
-                        employeeId: emp.employeeId,
-                        employeeName: emp.name,
-                        date: dateStr,
-                        status: 'leave',
-                        isModified: false
-                    };
-                } else if (!isNonWorkingDay && now > inDeadline) {
-                    finalRecord = {
-                        id: `missing-${emp.employeeId}`,
-                        employeeId: emp.employeeId,
-                        employeeName: emp.name,
-                        date: dateStr,
-                        status: 'absent',
-                        isModified: false
-                    };
-                } else {
-                    // 尚未到时间，或者休息日且无记录
-                    finalRecord = {
-                        id: `wait-${emp.employeeId}`,
-                        employeeId: emp.employeeId,
-                        employeeName: emp.name,
-                        date: dateStr,
-                        status: 'unattended',
-                        isModified: false
-                    };
-                }
-            } else {
-                // 已有记录
-                finalRecord = {
-                    ...r,
-                    checkInTime: r.checkInTime?.toISOString(),
-                    checkOutTime: r.checkOutTime?.toISOString(),
-                    isModified: r.auditLogs.length > 0
-                };
+            const record: AttendanceRecord = {
+                id: latestRecord?.id || `missing-${emp.employeeId}`,
+                employeeId: emp.employeeId,
+                employeeName: emp.name,
+                status: latestRecord?.status || '未出勤-正常',
+                recordTime: latestRecord?.recordTime?.toISOString() || null,
+                recorder: latestRecord?.recorder || 'SYSTEM',
+                reason: latestRecord?.reason || null
+            };
+
+            // 3. 应用过滤业务逻辑 (根据 PRD 归类)
+            if (filterType === 'all') {
+                fullList.push(record);
+                continue;
             }
 
-            // 5. 应用过滤
-            let include = false;
-            if (filterType === 'all') include = true;
-            else if (filterType === 'exceptions') {
-                // 异常定义：absent, late, 或者由于超时导致的各种问题
-                if (finalRecord.status === 'absent' || finalRecord.status === 'late') include = true;
-                else if (finalRecord.checkInTime && !finalRecord.checkOutTime && now > outGraceDeadline) include = true;
-                else if (finalRecord.checkOutTime && new Date(finalRecord.checkOutTime) < outTime) include = true;
-            }
-            else if (filterType === 'present') {
-                include = ['present', 'wfh', 'worksite', 'late'].includes(finalRecord.status) && !!finalRecord.checkInTime;
-            }
-            else if (filterType === 'absent') include = finalRecord.status === 'absent';
-            else if (filterType === 'late') include = finalRecord.status === 'late';
-            else if (filterType === 'leave') include = finalRecord.status === 'leave';
-            else if (filterType === 'unattended') include = finalRecord.status === 'unattended';
-            else if (filterType === 'successOut') include = !!finalRecord.checkOutTime && new Date(finalRecord.checkOutTime) >= outTime;
+            //映射前端分类到后端匹配逻辑
+            const status = record.status;
+            let match = false;
 
-            if (include) fullList.push(finalRecord);
-        });
+            switch (filterType) {
+                case 'unattended':
+                    match = status.startsWith('未出勤');
+                    break;
+                case 'present':
+                    match = status.startsWith('出勤'); // 包含出勤-正常, 出勤-迟到
+                    break;
+                case 'checkout':
+                    match = status.startsWith('退勤'); // 包含退勤-正常, 退勤-早退, 退勤-晚退
+                    break;
+                case 'exceptions':
+                case 'exception':
+                    match = status.startsWith('异常'); // 仅限异常-缺勤
+                    break;
+                case 'leave':
+                    match = status.startsWith('休假'); // 休假-有休, 休假-无休
+                    break;
+                case 'outside':
+                    match = status.startsWith('公司外'); // 公司外-现场, 公司外-远程
+                    break;
+            }
 
-        return fullList.sort((a: any, b: any) => a.employeeId.localeCompare(b.employeeId));
+            if (match) fullList.push(record);
+        }
+
+        return fullList.sort((a, b) => a.employeeId.localeCompare(b.employeeId));
     }
 
     /**
-     * 修改考勤状态 & 记录审计日志
+     * 获取今日全员流水日志 (支持分页)
      */
-    async updateAttendance(id: string, newStatus: string, operator: string, reason: string): Promise<AttendanceRecord | null> {
-        return await prisma.$transaction(async (tx) => {
-            const before = await tx.attendance.findUnique({ where: { id } });
-            if (!before) return null;
+    async getAllLogsToday(page: number = 1, limit: number = 10): Promise<{ logs: AttendanceRecord[], total: number }> {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
 
-            const updated = await tx.attendance.update({
-                where: { id },
-                data: { status: newStatus }
-            });
-
-            await tx.auditLog.create({
-                data: {
-                    attendanceId: id,
-                    action: 'UPDATE',
-                    before: before as any,
-                    after: updated as any,
-                    operatedBy: operator,
-                    reason: reason
-                }
-            });
-
-            return {
-                ...updated,
-                checkInTime: updated.checkInTime?.toISOString(),
-                checkOutTime: updated.checkOutTime?.toISOString()
-            } as AttendanceRecord;
+        const total = await prisma.attendance.count({
+            where: { recordTime: { gte: startOfDay } } as any
         });
+
+        const logs = await prisma.attendance.findMany({
+            where: { recordTime: { gte: startOfDay } } as any,
+            include: { employee: true } as any,
+            orderBy: [
+                { recordTime: 'desc' },
+                { id: 'desc' }
+            ] as any,
+            skip: (page - 1) * limit,
+            take: limit
+        }) as any[];
+
+        const mappedLogs = logs.map(l => ({
+            id: l.id,
+            employeeId: l.employeeId,
+            employeeName: (l as any).employee.name,
+            status: l.status,
+            recordTime: l.recordTime.toISOString(),
+            recorder: (l as any).recorder,
+            reason: (l as any).reason
+        }));
+
+        return { logs: mappedLogs, total };
     }
 
     /**
-     * 获取历史记录
+     * 获取员工最新的状态记录 (用于打卡判定)
      */
-    async getEmployeeHistory(employeeId: string): Promise<AttendanceRecord[]> {
-        const records = await prisma.attendance.findMany({
+    async getLatestRecordToday(employeeId: string): Promise<any | null> {
+        const now = new Date();
+        const startOfDay = new Date(now.setHours(0, 0, 0, 0));
+
+        return await prisma.attendance.findFirst({
             where: {
                 employeeId,
-                deletedAt: null
+                recordTime: { gte: startOfDay }
             },
-            orderBy: { date: 'desc' }
-        });
-        return records.map(r => ({
-            ...r,
-            checkInTime: r.checkInTime?.toISOString(),
-            checkOutTime: r.checkOutTime?.toISOString()
-        })) as AttendanceRecord[];
-    }
-
-    /**
-     * 获取审计日志
-     */
-    async getAuditLogs(recordId: string) {
-        return await prisma.auditLog.findMany({
-            where: { attendanceId: recordId },
-            orderBy: { operatedAt: 'desc' }
+            orderBy: [
+                { recordTime: 'desc' },
+                { id: 'desc' }
+            ]
         });
     }
 
     /**
-     * 创建记录 (含审计)
+     * 创建出勤日志 (追加模式)
      */
-    async createAttendance(data: any, operator: string): Promise<AttendanceRecord> {
-        return await prisma.$transaction(async (tx) => {
-            const record = await tx.attendance.create({
-                data: {
-                    employeeId: data.employeeId,
-                    employeeName: data.employeeName,
-                    date: data.date,
-                    status: data.status,
-                    checkInTime: data.checkInTime,
-                    checkOutTime: data.checkOutTime,
-                }
-            });
-
-            await tx.auditLog.create({
-                data: {
-                    attendanceId: record.id,
-                    action: 'CREATE',
-                    after: record as any,
-                    operatedBy: operator,
-                    reason: 'Initial creation'
-                }
-            });
-
-            return {
-                ...record,
-                checkInTime: record.checkInTime?.toISOString(),
-                checkOutTime: record.checkOutTime?.toISOString()
-            } as AttendanceRecord;
+    async createAttendance(data: {
+        employeeId: string;
+        status: string;
+        recorder: string;
+        recordTime?: Date;
+        reason?: string;
+    }): Promise<any> {
+        return await prisma.attendance.create({
+            data: {
+                employeeId: data.employeeId,
+                status: data.status,
+                recorder: data.recorder,
+                recordTime: data.recordTime || new Date(),
+                reason: data.reason
+            }
         });
     }
 
     /**
-     * 获取统计数据 (考虑软删除)
+     * 获取 Dashboard 统计数据
      */
-    async getDailyStats(date: Date): Promise<DailyStats> {
-        const dateStr = date.toISOString().split('T')[0];
-        const now = new Date();
-
-        // 1. 统计分母：在职 (ACTIVE) + 休假 (ON_LEAVE) + 已过期内定 (PROSPECTIVE with hireDate <= today)
-        const totalEmployees = await prisma.employee.findMany({
-            where: {
-                OR: [
-                    { status: 'ACTIVE' },
-                    { status: 'ON_LEAVE' },
-                    {
-                        AND: [
-                            { status: 'PROSPECTIVE' },
-                            { hireDate: { lte: now } }
-                        ]
-                    }
-                ],
-                deletedAt: null
-            },
-            select: { employeeId: true, status: true }
-        });
-
-        const totalCount = totalEmployees.length;
-
-        // 2. 获取今日所有考勤记录进行精细化分析
-        const records = await prisma.attendance.findMany({
-            where: { date: dateStr, deletedAt: null }
-        });
-
-        // 3. 获取规则时间线 (动态获取，不再死读 3 小时)
-        const defaultRule = await prisma.attendanceRule.findFirst({ where: { isDefault: true } });
-        const [inH, inM] = (defaultRule?.standardCheckIn || '09:00').split(':').map(Number);
-        const [outH, outM] = (defaultRule?.standardCheckOut || '18:00').split(':').map(Number);
-        const [startH, startM] = '05:00'.split(':').map(Number);
-        const maxOvertime = defaultRule?.maxOvertimeHours || 3;
-
-        const allowedStart = new Date(now);
-        allowedStart.setHours(startH, startM, 0, 0);
-
-        const inDeadline = new Date(now);
-        inDeadline.setHours(inH, inM, 0, 0);
-
-        const outTime = new Date(now);
-        outTime.setHours(outH, outM, 0, 0);
-
-        const outGraceDeadline = new Date(outTime.getTime() + maxOvertime * 60 * 60 * 1000);
-
-        // 4. 开始分类统计
-        let present = 0;
-        let late = 0;
-        let earlyLeave = 0;
-        let leaveRecordsCnt = 0;
-        let wfhCnt = 0; // 远程办公
-        let worksiteCnt = 0; // 现场工作
-        let successOut = 0;
-        let exceptions = 0;
-        let forgetOutAbsent = 0; // 忘记打卡转缺勤的人数
-
-        const processedIds = new Set();
+    async getDailyStats(date: Date): Promise<any> {
+        const records = await this.getDailyRecords(date, 'all');
+        const stats = {
+            totalEmployees: records.length,
+            unattended: 0, // 未出勤
+            present: 0,    // 出勤
+            checkout: 0,   // 退勤
+            exception: 0,  // 异常 (缺勤)
+            leave: 0,      // 休假
+            outside: 0     // 公司外
+        };
 
         records.forEach(r => {
-            processedIds.add(r.employeeId);
-
-            // 基础状态判定
-            let effectiveStatus = r.status;
-
-            // 动态逻辑：如果当前已过19:00且忘记打下班卡，统计时视为缺勤
-            if (!r.checkOutTime && now > outGraceDeadline && r.checkInTime) {
-                effectiveStatus = 'absent';
-            }
-
-            if (effectiveStatus === 'present') present++;
-            if (effectiveStatus === 'wfh') wfhCnt++;
-            if (effectiveStatus === 'worksite') worksiteCnt++;
-            if (effectiveStatus === 'late') { late++; exceptions++; }
-            if (effectiveStatus === 'leave') leaveRecordsCnt++;
-            if (effectiveStatus === 'early_leave') { earlyLeave++; exceptions++; }
-            if (effectiveStatus === 'absent') {
-                forgetOutAbsent++;
-                // 只有原本不是缺勤但在统计时变为缺勤的，才需要额外计入异常（原本就是缺勤的已经在 exceptions 里了，或者在 missingExceptions 里）
-                exceptions++;
-            }
-
-            // --- 下班/早退 逻辑监控 ---
-            if (r.checkOutTime) {
-                const checkout = new Date(r.checkOutTime);
-                if (checkout >= outTime && checkout <= outGraceDeadline) {
-                    successOut++;
-                }
-            }
+            const status = r.status;
+            if (status.startsWith('未出勤')) stats.unattended++;
+            else if (status.startsWith('出勤')) stats.present++;   // 包含出勤-正常, 出勤-迟到
+            else if (status.startsWith('退勤')) stats.checkout++;  // 包含退勤-正常, 退勤-早退, 退勤-晚退
+            else if (status.startsWith('异常')) stats.exception++; // 异常-缺勤
+            else if (status.startsWith('休假')) stats.leave++;     // 休假-有休, 休假-无休
+            else if (status.startsWith('公司外')) stats.outside++; // 公司外-现场, 公司外-远程
         });
 
-        // 5. 计算尚未出现在考勤表中的员工 (排除请假和节假日)
-        const [holiday, approvedLeaves] = await Promise.all([
-            (prisma as any).holiday.findUnique({ where: { date: dateStr } }),
-            (prisma as any).leaveRequest.findMany({
-                where: {
-                    status: 'APPROVED',
-                    startDate: { lte: now },
-                    endDate: { gte: now }
-                }
-            })
-        ]);
-
-        const isNonWorkingDay = (holiday && !holiday.isWorkday) || (!holiday && (now.getDay() === 0 || now.getDay() === 6));
-        const leaveMap = new Set(approvedLeaves.map((l: any) => l.employeeId));
-
-        // 真正应出席但没打卡的人 (且没请假，不是休息日)
-        let missingExceptions = 0;
-        if (!isNonWorkingDay && now > inDeadline) {
-            totalEmployees.forEach(emp => {
-                if (!processedIds.has(emp.employeeId) && !leaveMap.has(emp.employeeId)) {
-                    missingExceptions++;
-                }
-            });
-        }
-
-        return {
-            date: dateStr,
-            totalEmployees: totalCount,
-            present,
-            late,
-            absent: missingExceptions + forgetOutAbsent,
-            leave: leaveMap.size,
-            wfh: wfhCnt,
-            worksite: worksiteCnt,
-            earlyLeave,
-            unattended: now < inDeadline ? (totalCount - processedIds.size - leaveMap.size) : 0,
-            successOut,
-            exceptions: exceptions + missingExceptions
-        } as any;
+        return stats;
     }
 
     /**
-     * 软删除 (Soft Delete)
+     * 获取历史记录 (所有日志流)
      */
-    async deleteAttendance(id: string, operator: string): Promise<boolean> {
-        try {
-            await prisma.$transaction(async (tx) => {
-                const record = await tx.attendance.findUnique({ where: { id } });
-                if (!record) throw new Error('Not found');
-
-                await tx.auditLog.create({
-                    data: {
-                        attendanceId: id,
-                        action: 'DELETE',
-                        before: record as any,
-                        operatedBy: operator,
-                        reason: 'Record soft deleted'
-                    }
-                });
-
-                await tx.attendance.update({
-                    where: { id },
-                    data: { deletedAt: new Date() }
-                });
-            });
-            return true;
-        } catch (e) {
-            return false;
-        }
-    }
-    /**
-     * 检测员工当前是否存在未处理的异常状态
-     * 逻辑：检查是否有记录处于非正常状态，或者是否由于时间原因（如迟到、忘记下班）导致当前被判定为异常
-     */
-    async getEmployeeAnomaly(employeeId: string): Promise<any | null> {
-        const now = new Date();
-        const dateStr = now.toISOString().split('T')[0];
-
-        // 1. 获取规则与节假日信息
-        const [holiday, approvedLeave] = await Promise.all([
-            (prisma as any).holiday.findUnique({ where: { date: dateStr } }),
-            (prisma as any).leaveRequest.findFirst({
-                where: {
-                    employeeId,
-                    status: 'APPROVED',
-                    startDate: { lte: now },
-                    endDate: { gte: now }
-                }
-            })
-        ]);
-
-        // 如果是休息日且没补班，或者已经请假获批 -> 不存在异常（放行）
-        const isNonWorkingDay = (holiday && !holiday.isWorkday) || (!holiday && (now.getDay() === 0 || now.getDay() === 6));
-        if (isNonWorkingDay || approvedLeave) return null;
-
-        const employee = await prisma.employee.findUnique({
+    async getEmployeeHistory(employeeId: string): Promise<any[]> {
+        return await prisma.attendance.findMany({
             where: { employeeId },
-            include: {
-                rules: { where: { isDefault: false }, take: 1 },
-                department: {
-                    include: { rules: { where: { isDefault: false }, take: 1 } }
-                }
-            }
+            orderBy: [
+                { recordTime: 'desc' },
+                { id: 'desc' }
+            ]
         });
-        if (!employee) return null;
-
-        const rule = employee.rules?.[0] || employee.department?.rules?.[0] || await prisma.attendanceRule.findFirst({ where: { isDefault: true } });
-        if (!rule) return null;
-
-        const [inH, inM] = rule.standardCheckIn.split(':').map(Number);
-        const [outH, outM] = rule.standardCheckOut.split(':').map(Number);
-        const inDeadline = new Date(now);
-        inDeadline.setHours(inH, inM, 0, 0);
-        const outTime = new Date(now);
-        outTime.setHours(outH, outM, 0, 0);
-        const outGraceDeadline = new Date(outTime.getTime() + (rule.maxOvertimeHours || 3) * 60 * 60 * 1000);
-
-        // 2. 检查今天的记录
-        const todayRecord = await prisma.attendance.findFirst({
-            where: { employeeId, date: dateStr, deletedAt: null }
-        });
-
-        if (!todayRecord) {
-            // 如果还没打卡，且已经过了上班时间 -> 算异常 (缺勤)
-            if (now > inDeadline) {
-                return { type: 'ABSENT', message: '您今天尚未打卡且已过上班时间，请联系管理员处理异常。' };
-            }
-            return null; // 还没上班或者还没到时间，正常
-        }
-
-        // 3. 检查已有记录的状态
-        if (todayRecord.status === 'late') {
-            return { type: 'LATE', message: '您今天上班迟到，请联系管理员处理异常后方可继续打卡。' };
-        }
-        if (todayRecord.status === 'absent') {
-            return { type: 'ABSENT', message: '您已被系统判定为缺勤，请联系管理员核实。' };
-        }
-
-        // 4. 检查下班记录
-        if (todayRecord.checkInTime && !todayRecord.checkOutTime) {
-            // 如果过了加班截止时间还没下班打卡 -> 异常
-            if (now > outGraceDeadline) {
-                return { type: 'MISSING_OUT', message: '您已超过规定加班时间且未打下班卡，请联系管理员补录。' };
-            }
-        }
-
-        if (todayRecord.checkOutTime) {
-            const checkout = new Date(todayRecord.checkOutTime);
-            if (checkout < outTime) {
-                return { type: 'EARLY_OUT', message: '您属于早退打卡，状态异常，请联系管理员处理。' };
-            }
-        }
-
-        return null;
     }
 }
 

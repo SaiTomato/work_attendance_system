@@ -14,9 +14,9 @@ export default defineConfig({
         },
         proxy: {
             '/api': {
-                target: 'http://backend:3000', // Docker 内部网络名
+                target: 'http://backend:3000',
                 changeOrigin: true,
-                secure: false, // 后端是 HTTP
+                secure: false,
                 configure: (proxy, _options) => {
                     proxy.on('error', (err, _req, _res) => {
                         console.log('proxy error', err);

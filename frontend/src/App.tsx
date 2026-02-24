@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-ro
 import Dashboard from './pages/Dashboard';
 import { AttendanceList } from './pages/AttendanceList';
 import Employees from './pages/Employees';
+import EmployeeDetail from './pages/EmployeeDetail';
 import { LeaveManagement } from './pages/LeaveManagement';
 import Login from './pages/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -90,7 +91,7 @@ const Header = () => {
                         {['admin', 'manager', 'hr'].includes(user?.role || '') && (
                             <>
                                 <Link to="/" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">ホームページ</Link>
-                                <Link to="/attendance/list" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">異常リスト</Link>
+                                <Link to="/attendance/list" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">状態リスト</Link>
                             </>
                         )}
                         {user?.role !== 'terminal' && (
@@ -136,7 +137,7 @@ const Header = () => {
                         {['admin', 'manager', 'hr'].includes(user?.role || '') && (
                             <>
                                 <Link to="/" onClick={() => setIsMenuOpen(false)} className="block px-4 py-3 text-base font-bold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">ホームページ</Link>
-                                <Link to="/attendance/list" onClick={() => setIsMenuOpen(false)} className="block px-4 py-3 text-base font-bold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">異常リスト</Link>
+                                <Link to="/attendance/list" onClick={() => setIsMenuOpen(false)} className="block px-4 py-3 text-base font-bold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">状態リスト</Link>
                             </>
                         )}
                         {user?.role !== 'terminal' && (
@@ -204,6 +205,12 @@ const AppContent: React.FC = () => {
                         <Route path="/attendance/list" element={
                             <ProtectedRoute allowedRoles={['admin', 'manager', 'hr']}>
                                 <AttendanceList />
+                            </ProtectedRoute>
+                        } />
+
+                        <Route path="/attendance/history/:id" element={
+                            <ProtectedRoute allowedRoles={['admin', 'manager', 'hr']}>
+                                <EmployeeDetail />
                             </ProtectedRoute>
                         } />
 

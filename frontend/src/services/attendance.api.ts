@@ -1,5 +1,5 @@
 import { api } from './api';
-import { ApiResponse, DailyStats, AttendanceRecord } from '../types';
+import { ApiResponse, DailyStats, AttendanceRecord, AuditLog } from '../types';
 
 /**
  * 获取仪表盘统计 - 使用封装好的 axios 实例，自动处理 Token 和端口
@@ -16,6 +16,14 @@ export const fetchAttendanceList = async (date?: string, filter?: string): Promi
     const res = await api.get('/attendance/list', {
         params: { date, filter }
     });
+    return res.data;
+};
+
+/**
+ * 获取今日实时日志流
+ */
+export const fetchDailyLogsToday = async (page: number = 1, limit: number = 10): Promise<ApiResponse<{ logs: AttendanceRecord[], total: number }>> => {
+    const res = await api.get(`/attendance/logs/today?page=${page}&limit=${limit}`);
     return res.data;
 };
 
@@ -64,5 +72,28 @@ export const scanPunchToken = async (token: string): Promise<ApiResponse<Attenda
  */
 export const deleteAttendanceRecord = async (id: string): Promise<ApiResponse<void>> => {
     const res = await api.delete(`/attendance/${id}`);
+    return res.data;
+};
+
+/**
+ * 触发系统全员重置 (未出勤化)
+ */
+export const triggerDailyReset = async (): Promise<ApiResponse<{ count: number }>> => {
+    const res = await api.post('/attendance/reset');
+    return res.data;
+};
+
+/**
+ * 触发系统全员自动退勤
+ */
+export const triggerAutoCheckout = async (): Promise<ApiResponse<{ count: number }>> => {
+    const res = await api.post('/attendance/auto-checkout');
+    return res.data;
+};
+/**
+ * 获取考勤记录的审计日志
+ */
+export const fetchAuditLogs = async (id: string): Promise<ApiResponse<AuditLog[]>> => {
+    const res = await api.get(`/attendance/${id}/audit`);
     return res.data;
 };

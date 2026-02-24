@@ -44,20 +44,15 @@ const Login: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-6 premium-gradient-bg">
-            <div className="w-full max-w-md animate-in fade-in zoom-in duration-500">
-                <div className="text-center mb-10">
-                    <div className="inline-flex p-4 rounded-3xl bg-white shadow-xl shadow-indigo-100 mb-6 animate-float">
-                        <svg className="w-12 h-12 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                    </div>
-                    <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight">出勤管理システム</h1>
-                    <p className="text-slate-500 mt-3 font-medium text-lg italic">Work Attendance System</p>
+        <div className="h-screen flex items-center justify-center p-4 premium-gradient-bg overflow-hidden">
+            <div className="w-full max-w-md animate-in fade-in zoom-in duration-500 scale-95 md:scale-100">
+                <div className="text-center mb-6">
+                    <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">出勤管理システム</h1>
+                    <p className="text-slate-500 mt-1 font-medium text-sm italic">Work Attendance System</p>
                 </div>
 
-                <div className="glass-card p-10">
-                    <h2 className="text-2xl font-bold text-slate-800 mb-8 text-center uppercase tracking-widest">Portal Login</h2>
+                <div className="glass-card p-8">
+                    <h2 className="text-xl font-bold text-slate-800 mb-6 text-center uppercase tracking-widest">Portal Login</h2>
 
                     {error && (
                         <div className="mb-6 p-4 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-sm font-bold flex items-center gap-3 animate-in slide-in-from-top-2">
@@ -105,14 +100,14 @@ const Login: React.FC = () => {
                         </button>
                     </form>
 
-                    <div className="mt-8 pt-8 border-t border-slate-100 text-center">
-                        <p className="text-sm text-slate-400 font-medium">
+                    <div className="mt-6 pt-6 border-t border-slate-100 text-center">
+                        <p className="text-xs text-slate-400 font-medium">
                             Demo Admin: <span className="text-slate-900 font-bold">admin / admin</span>
                         </p>
                     </div>
                 </div>
 
-                <p className="text-center text-slate-400 mt-10 text-xs font-bold uppercase tracking-[0.2em]">
+                <p className="text-center text-slate-400 mt-6 text-[10px] font-bold uppercase tracking-[0.2em]">
                     &copy; 2026 Work Attendance System Professional
                 </p>
             </div>
