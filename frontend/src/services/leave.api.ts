@@ -5,7 +5,7 @@ export const leaveApi = {
      * 提交请假申请
      */
     async submitRequest(data: {
-        type: 'ANNUAL' | 'SICK' | 'SPECIAL' | 'BUSINESS';
+        type: 'PAID' | 'UNPAID';
         startDate: string;
         endDate: string;
         reason?: string;

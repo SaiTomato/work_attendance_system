@@ -9,17 +9,24 @@ export class AttendanceAuditService {
         operatedBy: string;
         reason?: string;
     }): Promise<void> {
-        try {
-            await prisma.auditLog.create({
-                data: {
-                    ...entry,
-                    before: entry.before ? JSON.parse(JSON.stringify(entry.before)) : undefined,
-                    after: entry.after ? JSON.parse(JSON.stringify(entry.after)) : undefined
-                }
-            });
-        } catch (e) {
-            console.warn('[Audit] Failed to persist log:', e);
-        }
+        // 使用简单的对象解构，避免潜在的 JSON 循环引用导致的挂起
+        const logData = {
+            targetId: entry.targetId,
+            action: entry.action,
+            operatedBy: entry.operatedBy,
+            reason: entry.reason || '',
+            // 仅提取关键字段存入 JSON，防止对象过大或含有复杂原型导致写入卡死
+            before: entry.before ? { status: entry.before.status, id: entry.before.id } : {},
+            after: entry.after ? { status: entry.after.status, id: entry.after.id } : {},
+            operatedAt: new Date()
+        };
+
+        // 异步执行，不阻塞主业务逻辑的返回
+        prisma.auditLog.create({ data: logData })
+            .then(res => console.log(`[Audit] Success: ${res.id}`))
+            .catch(err => console.error(`[Audit] Error:`, err));
+
+        console.log(`[Audit] Background task dispatched for target: ${entry.targetId}`);
     }
 
     async getLogsByTargetId(targetId: string): Promise<any[]> {

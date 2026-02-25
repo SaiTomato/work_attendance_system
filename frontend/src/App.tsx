@@ -47,7 +47,7 @@ const Header = () => {
 
     React.useEffect(() => {
         checkNotifications();
-        const timer = setInterval(checkNotifications, 30000); // 30秒轮询一次
+        const timer = setInterval(checkNotifications, 60000); // 30秒轮询一次
 
         // 监听自定义刷新事件 (由 LeaveManagement 触发)
         window.addEventListener('refreshNotifications', checkNotifications);

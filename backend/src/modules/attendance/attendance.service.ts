@@ -66,12 +66,26 @@ export class AttendanceService {
         }
 
         // 6. 追加记录
-        return await attendanceRepo.createAttendance({
+        const newRecord = await attendanceRepo.createAttendance({
             employeeId: data.employeeId,
             status: nextStatus,
             recorder: data.recorder,
             reason: data.reason
         });
+
+        // 7. 如果是管理员手动修正，記録审计日志
+        if (data.action === 'MANUAL') {
+            await attendanceAudit.log({
+                targetId: newRecord.id, // 关联新生成的考勤记录 ID
+                action: 'MANUAL_FIX',
+                before: latest,        // 修改前的最新状态记录
+                after: newRecord,      // 修改后的新记录
+                operatedBy: data.recorder,
+                reason: data.reason
+            });
+        }
+
+        return newRecord;
     }
 
     /**
@@ -205,9 +219,23 @@ export class AttendanceService {
 
     async updateAttendance(id: string, status: string, operator: string, reason: string) {
         // 在新系统中，"更新"就是"追加一条由管理员指定的状态"
-        // 我们需要先根据记录 ID 找到员工 ID
+
+        // 1. 处理虚拟 ID (针对尚未有今日记录的员工)
+        if (id.startsWith('missing-')) {
+            const employeeId = id.replace('missing-', '');
+            console.log(`[Service] Handling virtual ID fix for employee: ${employeeId}`);
+            return await this.createAttendance({
+                employeeId: employeeId,
+                recorder: operator,
+                action: 'MANUAL',
+                targetStatus: status,
+                reason: reason
+            });
+        }
+
+        // 2. 处理真实记录 ID
         const oldRecord = await prisma.attendance.findUnique({ where: { id } });
-        if (!oldRecord) throw new Error('Record not found');
+        if (!oldRecord) throw new Error('Record not found in database');
 
         return await this.createAttendance({
             employeeId: oldRecord.employeeId,
@@ -219,7 +247,6 @@ export class AttendanceService {
     }
 
     async deleteAttendance(id: string, operator: string): Promise<boolean> {
-        // 流水账系统原则上不允许删除，但由于是实验项目，我们暂时保留软删除逻辑
         try {
             await prisma.attendance.update({
                 where: { id },
@@ -228,6 +255,46 @@ export class AttendanceService {
             return true;
         } catch {
             return false;
+        }
+    }
+
+    /**
+     * 将审批通过的假期同步到员工状态及今日考勤记录
+     */
+    async syncLeaveToAttendance(leaveRequestId: string) {
+        const leave = await prisma.leaveRequest.findUnique({
+            where: { id: leaveRequestId },
+            include: { employee: true }
+        });
+
+        if (!leave || leave.status !== 'APPROVED') return;
+
+        // 1. 更新员工长期状态
+        const dutyStatusMap: any = {
+            'PAID': 'PAID_LEAVE',
+            'UNPAID': 'UNPAID_LEAVE'
+        };
+
+        await prisma.employee.update({
+            where: { employeeId: leave.employeeId },
+            data: {
+                dutyStatus: dutyStatusMap[leave.type] || 'NORMAL',
+                dutyStatusEndDate: leave.endDate
+            }
+        });
+
+        // 2. 如果假期是今天开始，立即追加一条今日考勤记录
+        const todayStr = new Date().toISOString().split('T')[0];
+        const leaveStartStr = leave.startDate.toISOString().split('T')[0];
+
+        if (todayStr === leaveStartStr) {
+            const statusLabel = leave.type === 'PAID' ? '休假-有休' : '休假-无休';
+            await attendanceRepo.createAttendance({
+                employeeId: leave.employeeId,
+                status: statusLabel,
+                recorder: 'SYSTEM_LEAVE_SYNC',
+                reason: `假期审批通过同步: ${leave.reason || ''}`
+            });
         }
     }
 }

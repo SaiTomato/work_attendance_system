@@ -20,3 +20,8 @@ export const assignEmployeeRule = async (id: string, ruleId: string): Promise<Ap
     const res = await api.post(`/employees/${id}/assign-rule`, { ruleId });
     return res.data;
 };
+
+export const deleteEmployee = async (id: string): Promise<ApiResponse<void>> => {
+    const res = await api.delete(`/employees/${id}`);
+    return res.data;
+};

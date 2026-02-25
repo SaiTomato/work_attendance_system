@@ -1,4 +1,4 @@
-import { PrismaClient, Position, EmployeeStatus, WorkLocation, UserRole } from '@prisma/client';
+import { PrismaClient, Position, EmployeeStatus, WorkLocation, UserRole, Gender } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -36,16 +36,16 @@ async function main() {
 
     // --- 3. 创建员工档案 ---
     const employees = [
-        { id: 'EMP-001', name: '佐藤 健一', gender: 'Male', age: 34, phone: '090-1111-2222', email: 'sato@example.com', position: Position.MANAGER, status: EmployeeStatus.ACTIVE, dept: depts.tech },
-        { id: 'EMP-002', name: '田中 美香', gender: 'Female', age: 28, phone: '090-2222-3333', email: 'tanaka@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.tech },
-        { id: 'EMP-003', name: '鈴木 一郎', gender: 'Male', age: 45, phone: '090-3333-4444', email: 'suzuki@example.com', position: Position.SUB_MANAGER, status: EmployeeStatus.ACTIVE, dept: depts.finance },
-        { id: 'EMP-004', name: '高橋 瞳', gender: 'Female', age: 24, phone: '090-4444-5555', email: 'takahashi@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.finance },
-        { id: 'EMP-005', name: '伊藤 博文', gender: 'Male', age: 50, phone: '090-5555-6666', email: 'ito@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.gen },
-        { id: 'EMP-006', name: '渡辺 麻衣', gender: 'Female', age: 29, phone: '090-6666-7777', email: 'watanabe@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.tech },
-        { id: 'EMP-007', name: '中村 剛', gender: 'Male', age: 38, phone: '090-7777-8888', email: 'nakamura@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.tech },
-        { id: 'EMP-008', name: '小林 誠', gender: 'Male', age: 41, phone: '090-8888-9999', email: 'kobayashi@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.finance },
-        { id: 'EMP-009', name: '加藤 あい', gender: 'Female', age: 31, phone: '090-9999-0000', email: 'kato@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.gen },
-        { id: 'EMP-010', name: '吉田 拓郎', gender: 'Male', age: 27, phone: '080-1234-5678', email: 'yoshida@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.tech },
+        { id: 'EMP-001', name: '佐藤 健一', gender: 'MALE', age: 34, phone: '090-1111-2222', email: 'sato@example.com', position: Position.MANAGER, status: EmployeeStatus.ACTIVE, dept: depts.tech },
+        { id: 'EMP-002', name: '田中 美香', gender: 'FEMALE', age: 28, phone: '090-2222-3333', email: 'tanaka@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.tech },
+        { id: 'EMP-003', name: '鈴木 一郎', gender: 'MALE', age: 45, phone: '090-3333-4444', email: 'suzuki@example.com', position: Position.SUB_MANAGER, status: EmployeeStatus.ACTIVE, dept: depts.finance },
+        { id: 'EMP-004', name: '高橋 瞳', gender: 'FEMALE', age: 24, phone: '090-4444-5555', email: 'takahashi@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.finance },
+        { id: 'EMP-005', name: '伊藤 博文', gender: 'MALE', age: 50, phone: '090-5555-6666', email: 'ito@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.gen },
+        { id: 'EMP-006', name: '渡辺 麻衣', gender: 'FEMALE', age: 29, phone: '090-6666-7777', email: 'watanabe@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.tech },
+        { id: 'EMP-007', name: '中村 剛', gender: 'MALE', age: 38, phone: '090-7777-8888', email: 'nakamura@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.tech },
+        { id: 'EMP-008', name: '小林 誠', gender: 'MALE', age: 41, phone: '090-8888-9999', email: 'kobayashi@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.finance },
+        { id: 'EMP-009', name: '加藤 あい', gender: 'FEMALE', age: 31, phone: '090-9999-0000', email: 'kato@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.gen },
+        { id: 'EMP-010', name: '吉田 拓郎', gender: 'MALE', age: 27, phone: '080-1234-5678', email: 'yoshida@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.tech },
     ];
 
     const createdEmployees = [];
@@ -54,7 +54,7 @@ async function main() {
             data: {
                 employeeId: emp.id,
                 name: emp.name,
-                gender: emp.gender,
+                gender: emp.gender as Gender,
                 age: emp.age,
                 phone: emp.phone,
                 email: emp.email,

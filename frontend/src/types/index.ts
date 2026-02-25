@@ -54,16 +54,16 @@ export interface EmployeeProfile {
     id: string;
     employeeId: string;
     name: string;
-    gender?: string;
-    age?: number;
-    phone?: string;
-    email?: string;
+    gender: 'MALE' | 'FEMALE' | 'OTHER';
+    age: number;
+    phone: string;
+    email: string;
     position: Position;
     status: EmployeeStatus;
     dutyStatus: DutyStatus; // 长期模式
     dutyStatusEndDate?: string; // 模式结束时间
     workLocation: WorkLocation;
-    departmentId?: string;
+    departmentId: string;
     department?: {
         name: string;
         code: string;

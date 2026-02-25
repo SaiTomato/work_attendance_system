@@ -11,7 +11,7 @@ export const LeaveManagement: React.FC = () => {
 
     // Form state
     const [submitting, setSubmitting] = useState(false);
-    const [type, setType] = useState<'ANNUAL' | 'SICK' | 'SPECIAL' | 'BUSINESS'>('ANNUAL');
+    const [type, setType] = useState<'PAID' | 'UNPAID'>('PAID');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [reason, setReason] = useState('');
@@ -116,10 +116,8 @@ export const LeaveManagement: React.FC = () => {
                                         onChange={(e: any) => setType(e.target.value)}
                                         className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700 transition-all"
                                     >
-                                        <option value="ANNUAL">有給休暇 (Annual)</option>
-                                        <option value="SICK">病欠 (Sick)</option>
-                                        <option value="BUSINESS">公出 (Business)</option>
-                                        <option value="SPECIAL">特別休暇 (Special)</option>
+                                        <option value="PAID">有給休暇 (Paid Leave)</option>
+                                        <option value="UNPAID">無給休暇/缺勤 (Unpaid Leave)</option>
                                     </select>
                                 </div>
 
@@ -203,8 +201,13 @@ export const LeaveManagement: React.FC = () => {
                                                 <div>
                                                     <p className="font-black text-lg leading-tight text-white">{leave.employee.name}</p>
                                                     <p className="text-xs text-indigo-200 font-bold uppercase tracking-widest mt-1">
-                                                        {leave.type} • {format(new Date(leave.startDate), 'MM/dd')} - {format(new Date(leave.endDate), 'MM/dd')}
+                                                        {leave.type === 'PAID' ? '有給休暇' : '無給休暇'} • {format(new Date(leave.startDate), 'MM/dd')} - {format(new Date(leave.endDate), 'MM/dd')}
                                                     </p>
+                                                    {leave.reason && (
+                                                        <p className="text-sm text-indigo-100/70 mt-2 italic bg-black/10 px-3 py-1 rounded-lg border-l-2 border-indigo-400">
+                                                            “{leave.reason}”
+                                                        </p>
+                                                    )}
                                                 </div>
                                             </div>
 
@@ -261,7 +264,16 @@ export const LeaveManagement: React.FC = () => {
                                                     </td>
                                                 )}
                                                 <td className="py-5">
-                                                    <span className="font-bold text-slate-700">{leave.type}</span>
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-700">
+                                                            {leave.type === 'PAID' ? '有給休暇' : '無給休暇'}
+                                                        </span>
+                                                        {leave.reason && (
+                                                            <span className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[120px]" title={leave.reason}>
+                                                                {leave.reason}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td className="py-5">
                                                     <div className="flex flex-col">

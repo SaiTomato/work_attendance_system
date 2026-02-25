@@ -57,4 +57,16 @@ router.post('/:id/assign-rule', requireRole(['admin', 'hr']), async (req, res) =
     }
 });
 
+// 5. 删除员工 (仅限 Admin/HR)
+router.delete('/:id', requireRole(['admin', 'hr']), async (req, res) => {
+    try {
+        const operator = (req as any).user?.username || 'UNKNOWN';
+        await employeeService.deleteEmployee(req.params.id, operator);
+        res.json({ success: true, message: 'Employee deleted successfully' });
+    } catch (error: any) {
+        console.error('Error deleting employee:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 export default router;

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { fetchEmployees, updateEmployee, createEmployee } from '../services/employee.api';
+import { fetchEmployees, updateEmployee, createEmployee, deleteEmployee } from '../services/employee.api';
 import { fetchDepartments, Department } from '../services/department.api';
 import { EmployeeProfile, EmployeeStatus, Position } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -35,6 +35,25 @@ export const Employees: React.FC = () => {
     useEffect(() => {
         loadData();
     }, [searchTerm]);
+
+    const handleDelete = async (id: string, name: string) => {
+        if (!window.confirm(`确定要删除员工 [${name}] 吗？\n删除后该员工将无法通过其账号登录系统，但考勤历史记录仍会被保留。`)) {
+            return;
+        }
+
+        try {
+            const res = await deleteEmployee(id);
+            if (res.success) {
+                alert('员工已成功删除');
+                loadData();
+            } else {
+                alert(res.message || '删除失败');
+            }
+        } catch (error) {
+            console.error('Delete failed:', error);
+            alert('系统错误，删除失败');
+        }
+    };
 
     const getStatusBadge = (status: EmployeeStatus) => {
         const colors: Record<EmployeeStatus, string> = {
@@ -150,12 +169,23 @@ export const Employees: React.FC = () => {
                                     </td>
                                     <td className="px-6 py-4">{getStatusBadge(emp.status)}</td>
                                     <td className="px-6 py-4 text-right">
-                                        <button
-                                            onClick={() => setEditingEmployee(emp)}
-                                            className="text-indigo-600 hover:text-indigo-900 font-bold text-sm bg-indigo-50 px-3 py-1 rounded-lg transition-colors"
-                                        >
-                                            編集
-                                        </button>
+                                        <div className="flex justify-end gap-2">
+                                            <button
+                                                onClick={() => setEditingEmployee(emp)}
+                                                className="text-indigo-600 hover:text-indigo-900 font-bold text-xs bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors"
+                                            >
+                                                編集
+                                            </button>
+                                            {isAdminOrHR && (
+                                                <button
+                                                    onClick={() => handleDelete(emp.id, emp.name)}
+                                                    className="p-1.5 bg-rose-50 text-rose-500 rounded-lg hover:bg-rose-600 hover:text-white transition-all border border-rose-100"
+                                                    title="删除"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                </button>
+                                            )}
+                                        </div>
                                     </td>
                                 </tr>
                             ))
@@ -209,14 +239,24 @@ const EmployeeEditForm = ({ employee, departments, onClose, onSaved }: any) => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const res = isEdit
-            ? await updateEmployee(employee.id, formData)
-            : await createEmployee(formData);
+        try {
+            const res = isEdit
+                ? await updateEmployee(employee.id, formData)
+                : await createEmployee(formData);
 
-        if (res.success) {
-            onSaved();
-        } else {
-            alert(res.message || 'Error saving employee');
+            if (res.success) {
+                const msg = isEdit
+                    ? '员工情报更新成功！'
+                    : `员工登记成功！\n\n[自动生成的登录账号]\n用户名: ${formData.employeeId}\n初始密码: Pass123`;
+                alert(msg);
+                onSaved();
+            } else {
+                alert(res.message || 'Error saving employee');
+            }
+        } catch (error: any) {
+            console.error('Submit Error:', error);
+            const errorMsg = error.response?.data?.message || error.message || '系统提交出错';
+            alert(`操作失败: ${errorMsg}`);
         }
     };
 
@@ -247,16 +287,24 @@ const EmployeeEditForm = ({ employee, departments, onClose, onSaved }: any) => {
                             <input type="text" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gender / 性別</label>
-                            <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.gender} onChange={e => setFormData({ ...formData, gender: e.target.value })}>
-                                <option value="MALE">男性</option>
-                                <option value="FEMALE">女性</option>
-                                <option value="OTHER">その他</option>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gender / 性别</label>
+                            <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.gender} onChange={e => setFormData({ ...formData, gender: e.target.value })} required>
+                                <option value="MALE">男 (Male)</option>
+                                <option value="FEMALE">女 (Female)</option>
+                                <option value="OTHER">その他 (Other)</option>
                             </select>
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Age / 年齢</label>
-                            <input type="number" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.age} onChange={e => setFormData({ ...formData, age: e.target.value })} />
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Age / 年龄</label>
+                            <input type="number" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.age} onChange={e => setFormData({ ...formData, age: parseInt(e.target.value) || 0 })} required />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Phone / 电话</label>
+                            <input type="tel" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="090-0000-0000" required />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email / 邮箱</label>
+                            <input type="email" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} placeholder="example@company.com" required />
                         </div>
                     </div>
                 </section>
@@ -269,8 +317,9 @@ const EmployeeEditForm = ({ employee, departments, onClose, onSaved }: any) => {
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Department / 部署</label>
-                            <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.departmentId} onChange={e => setFormData({ ...formData, departmentId: e.target.value })}>
-                                {departments.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                            <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.departmentId} onChange={e => setFormData({ ...formData, departmentId: e.target.value })} required>
+                                <option value="">选择部门...</option>
+                                {departments.map((d: any) => <option key={d.id} value={d.id}>{d.name} ({d.code})</option>)}
                             </select>
                         </div>
                         <div className="space-y-1">
