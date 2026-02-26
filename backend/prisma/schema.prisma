@@ -7,7 +7,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- 枚举定义 ---
+// --- 列挙型定義 ---
 
 enum UserRole {
   admin
@@ -17,44 +17,44 @@ enum UserRole {
   terminal
 }
 
-// 性别定义
+// 性別定義
 enum Gender {
   MALE
   FEMALE
   OTHER
 }
 
-// 职位定义
+// 役職定義
 enum Position {
-  STAFF          // 员工
-  SUB_MANAGER    // 次长
-  MANAGER        // 部长
-  GENERAL_AFFAIRS // 总务
-  CEO            // 社长
+  STAFF          // 一般社員
+  SUB_MANAGER    // 次長
+  MANAGER        // 部長
+  GENERAL_AFFAIRS // 総務
+  CEO            // 社長
 }
 
-// 员工生命周期状态
+// 従業員ライフサイクルステータス
 enum EmployeeStatus {
   PROSPECTIVE // 内定
-  ACTIVE      // 在职
-  RESIGNED    // 离职
+  ACTIVE      // 在職
+  RESIGNED    // 退職
 }
 
-// 出勤模式状态 (长期状态)
+// 勤務形態ステータス (長期的な状態)
 enum DutyStatus {
-  NORMAL        // 正常上班
-  PAID_LEAVE    // 有休
-  UNPAID_LEAVE  // 无休
+  NORMAL        // 通常勤務
+  PAID_LEAVE    // 有給休暇
+  UNPAID_LEAVE  // 無給休暇
 }
 
-// 工作地点定义
+// 勤務場所定義
 enum WorkLocation {
   OFFICE
   REMOTE
-  WORKSITE    // 现场
+  WORKSITE    // 現場
 }
 
-// --- 核心模型 ---
+// --- コアモデル ---
 
 model Department {
   id          String   @id @default(uuid())
@@ -70,15 +70,15 @@ model Department {
   deletedAt   DateTime?
 }
 
-// 【员工情报】
+// 【従業員情報】
 model Employee {
   id              String         @id @default(uuid())
-  employeeId      String         @unique // 员工ID
+  employeeId      String         @unique // 従業員ID
   name            String
-  gender          Gender         // 性别 (枚举)
-  age             Int            // 年龄
-  phone           String         // 电话
-  email           String         // email
+  gender          Gender         // 性別
+  age             Int            // 年齢
+  phone           String         // 電話番号
+  email           String         // メールアドレス
   
   departmentId    String
   department      Department     @relation(fields: [departmentId], references: [id])
@@ -86,30 +86,30 @@ model Employee {
   position        Position       @default(STAFF)
   status          EmployeeStatus @default(PROSPECTIVE)
   
-  // 出勤模式与地点
+  // 勤務形態と場所
   dutyStatus      DutyStatus     @default(NORMAL)
-  dutyStatusEndDate DateTime?    // 假期结束时间
+  dutyStatusEndDate DateTime?    // 休暇終了日
   workLocation    WorkLocation   @default(OFFICE)
   
   hireDate        DateTime?
   
   attendance      Attendance[]
   leaveRequests   LeaveRequest[]
-  user            User?          // 反向关联
+  user            User?          // 逆参照
 
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   deletedAt       DateTime?
 }
 
-// 【登入情报】
+// 【ログイン情報】
 model User {
   id           String     @id @default(uuid())
-  username     String     @unique // 用户ID
+  username     String     @unique // ユーザー名 (ログインID)
   password     String
   role         UserRole   @default(viewer)
   
-  // 对于 admin 和 terminal，employeeId 为 null
+  // 管理者(admin)や端末(terminal)の場合、employeeIdはnull
   employeeId   String?    @unique
   employee     Employee?  @relation(fields: [employeeId], references: [employeeId])
   
@@ -122,21 +122,21 @@ model User {
   updatedAt    DateTime   @updatedAt
 }
 
-// 【出勤记录】 (流水账模式)
+// 【勤怠記録】 (イベントログ形式)
 model Attendance {
   id           String   @id @default(uuid())
   employeeId   String
-  status       String   // "出勤-正常", "出勤-迟到", "退勤-正常", "异常-缺勤", "公司外-现场", "休假-有休" 等
-  recorder     String   // 记录者 (username 或 "SYSTEM" 或 "QR_SCANNER")
-  recordTime   DateTime @default(now()) // 记录时间 (系统即时生成)
-  reason       String?  // 记录理由 (管理员修改时填写)
+  status       String   // "出勤-通常", "出勤-遅刻", "退勤-通常", "異常-欠勤", "外出-現場", "休暇-有給" などのラベル
+  recorder     String   // 記録者 (ユーザー名、または "SYSTEM" / "QR_SCANNER")
+  recordTime   DateTime @default(now()) // 記録日時
+  reason       String?  // 修正理由 (管理者による修正時に記入)
 
   employee     Employee @relation(fields: [employeeId], references: [employeeId])
 
   @@index([employeeId, recordTime])
 }
 
-// 【RefreshToken】
+// 【リフレッシュトークン】
 model RefreshToken {
   id        String   @id @default(uuid())
   tokenHash String   @unique
@@ -147,32 +147,33 @@ model RefreshToken {
   createdAt DateTime @default(now())
 }
 
-// 基础规则配置 (保留作为系统全局时间常数)
+// 基本ルール設定 (システム全体の時間基準)
 model AttendanceRule {
   id              String   @id @default(uuid())
   name            String
-  standardCheckIn String   // "09:00"
-  standardCheckOut String  // "18:00"
-  windowStart     String   @default("07:00") // 可打卡开始时间
-  windowEnd       String   @default("14:00") // 可打卡结束时间
-  autoCheckoutTime String  @default("20:00") // 自动判定退勤时间
+  standardCheckIn String   // 例: "09:00"
+  standardCheckOut String  // 例: "18:00"
+  windowStart     String   @default("07:00") // 打刻可能開始時間
+  windowEnd       String   @default("14:00") // 打刻可能終了時間 (遅延判定等の境界)
+  autoCheckoutTime String  @default("20:00") // 自動退勤判定時間
   isDefault       Boolean  @default(false)
 }
-// --- 审计日志 ---
+
+// --- 監査ログ ---
 model AuditLog {
   id          String   @id @default(uuid())
-  targetId    String   // 目标 ID (员工 id 或 出勤记录 id)
-  action      String   // "CREATE", "UPDATE", "DELETE", "PUNCH"
-  before      Json?    // 变更前数据
-  after       Json?    // 变更后数据
-  operatedBy  String   // 操作人 (username)
+  targetId    String   // 対象ID (従業員IDまたは勤怠記録ID)
+  action      String   // "CREATE", "UPDATE", "DELETE", "MANUAL_FIX" 等
+  before      Json?    // 変更前データ
+  after       Json?    // 変更後データ
+  operatedBy  String   // 操作者 (ユーザー名)
   operatedAt  DateTime @default(now())
   reason      String?  // 理由
 
   @@index([targetId])
 }
 
-// --- 审批与假期 ---
+// --- 休暇申請と承認 ---
 
 enum ApprovalStatus {
   PENDING
@@ -181,8 +182,8 @@ enum ApprovalStatus {
 }
 
 enum LeaveType {
-  PAID    // 有休
-  UNPAID  // 无休
+  PAID    // 有給
+  UNPAID  // 無給
 }
 
 model LeaveRequest {
@@ -196,7 +197,7 @@ model LeaveRequest {
   reason           String?
   
   status           ApprovalStatus @default(PENDING)
-  approvedBy       String?        // 审批人 username
+  approvedBy       String?        // 承認者
   isReadByEmployee Boolean        @default(false)
   
   createdAt        DateTime       @default(now())

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { fetchDashboardStats, punchAttendance, fetchDailyLogsToday, triggerDailyReset, triggerAutoCheckout } from '../services/attendance.api';
+import { fetchDashboardStats, punchAttendance, fetchDailyLogsToday, triggerDailyReset, triggerAutoCheckout, downloadAttendanceReport } from '../services/attendance.api';
 import { DailyStats, AttendanceRecord } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -18,13 +18,17 @@ export const Dashboard: React.FC = () => {
 
     const isViewer = user?.role === 'viewer';
 
-    const loadData = (page: number = 1) => {
-        fetchDashboardStats().then(res => {
-            if (res.success && res.data) setStats(res.data);
-        });
+    const [search, setSearch] = useState('');
 
-        // 默认显示今日实时打刻日志流 (支持分页)
-        fetchDailyLogsToday(page, 10).then(res => {
+    const loadData = (page: number = 1, searchQuery: string = '') => {
+        if (page === 1) {
+            fetchDashboardStats().then(res => {
+                if (res.success && res.data) setStats(res.data);
+            });
+        }
+
+        // 本日のリアルタイムログを表示 (ページネーション・検索対応)
+        fetchDailyLogsToday(page, 10, searchQuery).then(res => {
             if (res.success && res.data) {
                 setMainLogs(res.data.logs);
                 setTotalLogs(res.data.total);
@@ -36,10 +40,11 @@ export const Dashboard: React.FC = () => {
     };
 
     useEffect(() => {
-        loadData(currentPage);
-        const timer = setInterval(() => loadData(currentPage), 30000);
+        loadData(currentPage, search);
+        // 通常の更新タイマー (検索中は停止または同期)
+        const timer = setInterval(() => loadData(currentPage, search), 30000);
         return () => clearInterval(timer);
-    }, [currentPage]);
+    }, [currentPage, search]);
 
     const handlePunch = async () => {
         setIsPunching(true);
@@ -47,13 +52,13 @@ export const Dashboard: React.FC = () => {
         try {
             const res = await punchAttendance();
             if (res.success) {
-                alert('打刻成功！');
+                alert('打刻に成功しました！');
                 loadData(currentPage);
             } else {
                 setPunchError(res.message || '打刻失敗');
             }
         } catch (err: any) {
-            const msg = err.response?.data?.message || '打刻被システム拒否されました';
+            const msg = err.response?.data?.message || '打刻がシステムによって拒否されました';
             setPunchError(msg);
         } finally {
             setIsPunching(false);
@@ -61,7 +66,7 @@ export const Dashboard: React.FC = () => {
     };
 
     const selectCategory = (filter: string) => {
-        // 直接跳转到列表页并应用过滤器
+        // リストページへ遷移し、フィルターを適用
         navigate(`/attendance/list?filter=${filter}`);
     };
 
@@ -105,7 +110,7 @@ export const Dashboard: React.FC = () => {
     if (!stats) return (
         <div className="flex flex-col items-center justify-center min-h-[400px]">
             <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-            <p className="mt-4 text-slate-500 font-medium">分析データを読み込み中...</p>
+            <p className="mt-4 text-slate-500 font-medium">データを読み込み中...</p>
         </div>
     );
 
@@ -113,7 +118,7 @@ export const Dashboard: React.FC = () => {
         <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight">ホームページ</h2>
+                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight">ホーム</h2>
                     <p className="text-slate-500 mt-1">本日の統計データ</p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -127,12 +132,25 @@ export const Dashboard: React.FC = () => {
                         ) : <ClockIcon />}
                         {isPunching ? '処理中...' : '出勤/退勤打刻'}
                     </button>
-                    {!isViewer && <button className="btn-premium bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 shadow-sm">レポート出力</button>}
+                    {!isViewer && (
+                        <button
+                            onClick={async () => {
+                                try {
+                                    await downloadAttendanceReport();
+                                } catch (error) {
+                                    alert('レポートの出力に失敗しました');
+                                }
+                            }}
+                            className="btn-premium bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 shadow-sm"
+                        >
+                            レポート出力
+                        </button>
+                    )}
                     <button onClick={() => loadData(currentPage)} className="btn-premium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">データ更新</button>
                 </div>
             </header>
 
-            {/* 醒目的异常拦截警告 */}
+            {/* 異常値のアラート */}
             {punchError && (
                 <div className="animate-in fade-in zoom-in duration-300 bg-rose-50 border-2 border-rose-200 rounded-2xl p-6 flex items-start gap-4 shadow-xl shadow-rose-100">
                     <div className="bg-rose-500 text-white p-3 rounded-xl">
@@ -162,10 +180,10 @@ export const Dashboard: React.FC = () => {
                             <div className="p-2 bg-indigo-500 rounded-lg">
                                 <UsersIcon />
                             </div>
-                            <h3 className="text-xl font-black uppercase tracking-widest">System Administration</h3>
+                            <h3 className="text-xl font-black uppercase tracking-widest">システム管理</h3>
                         </div>
                         <p className="text-slate-400 mb-8 max-w-2xl font-medium">
-                            管理者専用ツール：システムの全従業員の状態を一括で操作できます。翌朝の初期化テストや、夜間の強制退勤処理に使用してください。
+                            管理者専用ツール：全従業員の状態を一括操作できます。テストや、業務終了後の強制退勤などに使用してください。
                         </p>
                         <div className="flex flex-wrap gap-4">
                             <button
@@ -185,7 +203,7 @@ export const Dashboard: React.FC = () => {
                 </div>
             )}
 
-            {/* PROJECT_REFORM Stat Cards */}
+            {/* Stat Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 <StatCard
                     label="全従業員 (Total)"
@@ -231,7 +249,7 @@ export const Dashboard: React.FC = () => {
                     onClick={() => selectCategory('leave')}
                 />
                 <StatCard
-                    label="公司外 (Offsite)"
+                    label="外出 (Offsite)"
                     value={stats.outside}
                     icon={<BuildingOfficeIcon />}
                     color="purple"
@@ -239,7 +257,7 @@ export const Dashboard: React.FC = () => {
                 />
             </div>
 
-            {/* 今日出勤ログ (Live Flow Limit 10) */}
+            {/* リアルタイム打刻ログ */}
             <div className="glass-card overflow-hidden">
                 <div className="px-8 py-6 border-b border-slate-200/60 flex items-center justify-between bg-white/50">
                     <div className="flex items-center gap-3">
@@ -247,11 +265,26 @@ export const Dashboard: React.FC = () => {
                             <BoltIcon />
                         </div>
                         <h3 className="text-xl font-bold text-slate-900">
-                            リアルタイム・打刻ログ流
+                            打刻ログ・リアルタイムフロー
                         </h3>
                     </div>
                     <div className="flex items-center gap-4">
-                        <span className="text-xs font-bold text-slate-400 italic">Total Today: {totalLogs}</span>
+                        <div className="relative group/search">
+                            <input
+                                type="text"
+                                placeholder="名前・IDで検索..."
+                                value={search}
+                                onChange={(e) => {
+                                    setSearch(e.target.value);
+                                    setCurrentPage(1);
+                                }}
+                                className="pl-10 pr-4 py-2 bg-slate-100/50 border border-transparent rounded-xl text-xs font-bold focus:bg-white focus:border-indigo-100 focus:ring-4 focus:ring-indigo-500/5 outline-none w-40 md:w-64 transition-all"
+                            />
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within/search:text-indigo-500 transition-colors">
+                                <SearchIcon />
+                            </div>
+                        </div>
+                        <span className="text-xs font-bold text-slate-400 italic">本日合計: {totalLogs}</span>
                         <div className="flex gap-1">
                             <button
                                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
@@ -278,8 +311,8 @@ export const Dashboard: React.FC = () => {
                             <tr className="bg-slate-50/50">
                                 <th className="px-8 py-4 text-left text-xs font-black text-slate-400 uppercase tracking-widest leading-none">ID</th>
                                 <th className="px-8 py-4 text-left text-xs font-black text-slate-400 uppercase tracking-widest leading-none">氏名</th>
-                                <th className="px-8 py-4 text-left text-xs font-black text-slate-400 uppercase tracking-widest leading-none">記録された状態</th>
-                                <th className="px-8 py-4 text-left text-xs font-black text-slate-400 uppercase tracking-widest leading-none">時間</th>
+                                <th className="px-8 py-4 text-left text-xs font-black text-slate-400 uppercase tracking-widest leading-none">ステータス</th>
+                                <th className="px-8 py-4 text-left text-xs font-black text-slate-400 uppercase tracking-widest leading-none">時刻</th>
                                 <th className="px-8 py-4 text-right text-xs font-black text-slate-400 uppercase tracking-widest leading-none">操作</th>
                             </tr>
                         </thead>
@@ -291,8 +324,8 @@ export const Dashboard: React.FC = () => {
                             ) : (
                                 mainLogs.map((record: AttendanceRecord) => {
                                     const st = record.status;
-                                    const isCritical = st.includes('异常') || st.includes('異常') || st.includes('迟到') || st.includes('遅刻') || st.includes('早退') || st.includes('欠勤');
-                                    const isNormal = st.includes('正常') && !st.startsWith('未出勤');
+                                    const isCritical = st.includes('異常') || st.includes('遅刻') || st.includes('早退') || st.includes('欠勤');
+                                    const isNormal = st.includes('通常') && !st.startsWith('未出勤');
                                     const isUnattended = st.startsWith('未出勤');
 
                                     return (
@@ -323,7 +356,7 @@ export const Dashboard: React.FC = () => {
                                             </td>
                                             <td className="px-8 py-5 text-right">
                                                 <Link to={`/attendance/history/${record.employeeId}`} className="text-indigo-600 hover:text-indigo-900 text-[10px] font-black transition-opacity opacity-0 group-hover:opacity-100 uppercase tracking-tighter">
-                                                    History &rarr;
+                                                    履歴を表示 &rarr;
                                                 </Link>
                                             </td>
                                         </tr>
@@ -374,7 +407,7 @@ const StatCard = ({ label, value, icon, color, isCritical, onClick }: any) => {
                 </div>
             </div>
             <div className="mt-4 flex items-center text-[10px] font-black uppercase tracking-widest">
-                <span className="text-indigo-500">View Details</span>
+                <span className="text-indigo-500">詳細を表示</span>
                 <span className="text-slate-300 ml-1">➔</span>
             </div>
         </div>
@@ -405,6 +438,9 @@ const BuildingOfficeIcon = () => (
 );
 const BoltIcon = () => (
     <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
+);
+const SearchIcon = () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
 );
 
 export default Dashboard;

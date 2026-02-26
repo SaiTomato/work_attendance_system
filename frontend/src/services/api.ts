@@ -1,13 +1,13 @@
 import axios, { AxiosRequestConfig } from 'axios';
 
-// 使用 Vite Proxy: 使得 API 请求看起来像是发给同源的 (localhost:5173/api)
-// 这样浏览器就会自动处理 Cookie，无需跨域及 SameSite=None 配置
+// Viteプロキシの使用: APIリクエストを同源（localhost:5173/api）として扱う。
+// これにより、ブラウザがCookieを自動的に処理し、クロスドメインやSameSite=Noneの設定が不要になる。
 const BASE_URL = import.meta.env.VITE_API_URL || '';
 const API_URL = `${BASE_URL}/api`;
 
 export const api = axios.create({
     baseURL: API_URL,
-    withCredentials: true, // ✅ cookie（refresh token）自动发送
+    withCredentials: true, // ✅ cookie（リフレッシュトークン）を自動送信
 });
 
 // Request interceptor: attach access token
@@ -47,7 +47,7 @@ api.interceptors.response.use(
     async (error) => {
         const originalRequest = error.config as AxiosRequestConfigWithRetry;
 
-        // refresh 自己 401 → session 已失效，直接登出
+        // リフレッシュトークンの401応答 → セッション切れのため強制ログアウト
         if (originalRequest.url?.includes('/auth/refresh')) {
             localStorage.removeItem('accessToken');
             localStorage.removeItem('user');
@@ -77,7 +77,7 @@ api.interceptors.response.use(
 
             try {
                 const res = await api.post('/auth/refresh');
-                const { accessToken } = res.data.data; // 注意这里是 .data.data 因为后端返回 { success, data: { accessToken } }
+                const { accessToken } = res.data.data; // バックエンドのレスポンス形式 { success, data: { accessToken } } に準拠
 
                 localStorage.setItem('accessToken', accessToken);
 

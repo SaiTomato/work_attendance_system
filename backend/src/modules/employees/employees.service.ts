@@ -3,7 +3,7 @@ import { EmployeeStatus, Position, WorkLocation } from '@prisma/client';
 
 export class EmployeeService {
     /**
-     * 获取所有员工列表，支持根据部门、状态、搜索关键词过滤
+     * 従業員一覧を取得。部署、ステータス、検索キーワードによるフィルタリングに対応
      */
     async listEmployees(filters: { departmentId?: string; status?: string; search?: string }) {
         const where: any = { deletedAt: null };
@@ -34,19 +34,19 @@ export class EmployeeService {
     }
 
     /**
-     * 创建新员工档案 (含日志记录)
+     * 新規従業員プロファイルを作成 (監査ログを含む)
      */
     async createEmployee(data: any, operator: string) {
-        // 1. 全局唯一性检查 (即便已软删除的员工 ID 也不能复用)
+        // 1. グローバルな一意性チェック (退職・削除済み従業員のIDも再利用不可)
         const existing = await prisma.employee.findFirst({
             where: { employeeId: data.employeeId }
         });
         if (existing) {
-            throw new Error(`员工ID [${data.employeeId}] 已被占用（含已离职/删除员工），不可复用。`);
+            throw new Error(`従業員ID [${data.employeeId}] は既に使用されています（退職・削除済みを含む）。重複は許可されません。`);
         }
 
         return await prisma.$transaction(async (tx) => {
-            // 1. 创建员工档案
+            // 1. 従業員プロファイルの作成
             const newEmp = await tx.employee.create({
                 data: {
                     employeeId: data.employeeId,
@@ -65,8 +65,8 @@ export class EmployeeService {
                 }
             });
 
-            // 2. 自动创建登录账号 (User)
-            // 默认用户名: 员工ID, 默认密码: pass123
+            // 2. ログインアカウント (User) の自動生成
+            // デフォルトユーザー名: 従業員ID, デフォルトパスワード: pass123
             const bcrypt = require('bcryptjs');
             const defaultHashedPassword = await bcrypt.hash('pass123', 10);
 
@@ -74,13 +74,13 @@ export class EmployeeService {
                 data: {
                     username: data.employeeId,
                     password: defaultHashedPassword,
-                    role: 'viewer', // 默认普通员工角色
-                    employeeId: newEmp.employeeId, // 关联逻辑工号，而非 UUID
-                    departmentId: data.departmentId // 默认所属部门
+                    role: 'viewer', // デフォルトは一般従業員ロール
+                    employeeId: newEmp.employeeId, // UUIDではなく論理IDで紐付け
+                    departmentId: data.departmentId // 所属部署を同期
                 }
             });
 
-            // 3. 记录审计日志
+            // 3. 監査ログの記録
             try {
                 await tx.auditLog.create({
                     data: {
@@ -100,14 +100,14 @@ export class EmployeeService {
     }
 
     /**
-     * 修改员工情报 (增强防御性编程)
+     * 従業員情報を更新
      */
     async updateEmployee(id: string, updateData: any, operator: string) {
         return await prisma.$transaction(async (tx) => {
             const before = await tx.employee.findUnique({ where: { id } });
-            if (!before) throw new Error('Employee not found');
+            if (!before) throw new Error('従業員が見つかりません');
 
-            // 1. 严格白名单过滤
+            // 1. ホワイトリストによるフィルタリング
             const payload: any = {};
             const fields = [
                 'name', 'gender', 'age', 'phone', 'email',
@@ -125,7 +125,7 @@ export class EmployeeService {
                 }
             });
 
-            // 2. 健壮的日期处理函数
+            // 2. 日付処理のヘルパー
             const parseDate = (val: any) => {
                 if (!val || val === '') return null;
                 const d = new Date(val);
@@ -142,13 +142,13 @@ export class EmployeeService {
                 }
             });
 
-            // 3. 执行更新
+            // 3. 更新の実行
             const updated = await tx.employee.update({
                 where: { id },
                 data: payload
             });
 
-            // 自动账号同步逻辑：如果是修改为离职状态，自动注销其登录账号
+            // ステータス同期ロジック: 退職（RESIGNED）に変更された場合、ログインアカウントを自動削除
             if (payload.status === 'RESIGNED') {
                 console.log(`[EmployeeService] Status changed to RESIGNED for ${id}. Auto-removing user account.`);
                 await tx.user.deleteMany({
@@ -156,8 +156,7 @@ export class EmployeeService {
                 });
             }
 
-            // 4. 记录日志 (如果 auditLog 存在)
-            // 4. 记录日志
+            // 4. 監査ログの記録
             try {
                 await tx.auditLog.create({
                     data: {
@@ -178,37 +177,37 @@ export class EmployeeService {
     }
 
     /**
-     * 为员工指定特殊的考勤规则 (功能暂留)
+     * 従業員への個別勤怠ルールの割り当て (将来用)
      */
     async assignSpecialRule(employeeId: string, ruleId: string) {
-        // 目前 Schema 中 Employee 没有直接关联 Rule，如需此功能需调整 Schema
+        // 現行のスキーマでは Employee と Rule の直接の紐付けがないため未実装
         console.warn('assignSpecialRule is not implemented in current schema');
         return null;
     }
 
     /**
-     * 删除员工情报 (软删除)
-     * 同时删除其关联的登录账号
+     * 従業員情報を削除 (論理削除)
+     * 同時に関連するログインアカウントも削除
      */
     async deleteEmployee(id: string, operator: string) {
         return await prisma.$transaction(async (tx) => {
             const employee = await tx.employee.findUnique({ where: { id } });
-            if (!employee) throw new Error('Employee not found');
+            if (!employee) throw new Error('従業員が見つかりません');
 
-            // 1. 删除关联的用户账号 (确保不再能登录)
+            // 1. 関連するユーザーアカウントを削除 (ログイン不可にする)
             if (employee.employeeId) {
                 await tx.user.deleteMany({
                     where: { employeeId: employee.employeeId }
                 });
             }
 
-            // 2. 执行软删除
+            // 2. 論理削除の実行
             const deleted = await tx.employee.update({
                 where: { id },
                 data: { deletedAt: new Date() }
             });
 
-            // 3. 记录审计日志
+            // 3. 監査ログの記録
             try {
                 await tx.auditLog.create({
                     data: {

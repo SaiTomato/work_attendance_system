@@ -1,30 +1,37 @@
-import { PrismaClient, Position, EmployeeStatus, WorkLocation, UserRole, Gender } from '@prisma/client';
+import { PrismaClient, UserRole, Gender, Position, EmployeeStatus, WorkLocation, DutyStatus, ApprovalStatus, LeaveType } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
-    console.log('🌱 正在执行全量改革：灌入 PROJECT_REFORM 拟真数据...');
+    console.log('🌱 データベースのシード処理を開始します...');
 
-    // --- 清理旧数据 ---
+    // 1. 既存データのクリーンアップ
+    // 既存のデータを削除して重複を防ぐ
     await prisma.attendance.deleteMany({});
+    await prisma.auditLog.deleteMany({});
+    await prisma.leaveRequest.deleteMany({});
     await prisma.refreshToken.deleteMany({});
     await prisma.user.deleteMany({});
     await prisma.employee.deleteMany({});
     await prisma.department.deleteMany({});
     await prisma.attendanceRule.deleteMany({});
 
-    // --- 1. 创建部门 ---
-    const depts = {
-        tech: await prisma.department.create({ data: { name: '技术部', code: 'TECH', description: 'Software and Infrastructure' } }),
-        finance: await prisma.department.create({ data: { name: '财务部', code: 'FIN' } }),
-        gen: await prisma.department.create({ data: { name: '总务部', code: 'GEN' } }),
-    };
+    // 2. 所属部署の作成
+    const hrDep = await prisma.department.create({
+        data: { name: '人事部', code: 'HR001', description: '人材採用および勤怠管理の担当' }
+    });
+    const itDep = await prisma.department.create({
+        data: { name: 'ITソリューション部', code: 'IT001', description: 'システム開発およびインフラ管理' }
+    });
+    const salesDep = await prisma.department.create({
+        data: { name: '営業部', code: 'SL001', description: '新規顧客開拓および顧客維持' }
+    });
 
-    // --- 2. 创建考勤规则 (基于 PROJECT_REFORM) ---
-    await prisma.attendanceRule.create({
+    // 3. システム共通ルールの作成
+    const defaultRule = await prisma.attendanceRule.create({
         data: {
-            name: '公司标准工时规则',
+            name: '標準勤務規則 (09:00-18:00)',
             standardCheckIn: '09:00',
             standardCheckOut: '18:00',
             windowStart: '07:00',
@@ -34,118 +41,146 @@ async function main() {
         }
     });
 
-    // --- 3. 创建员工档案 ---
-    const employees = [
-        { id: 'EMP-001', name: '佐藤 健一', gender: 'MALE', age: 34, phone: '090-1111-2222', email: 'sato@example.com', position: Position.MANAGER, status: EmployeeStatus.ACTIVE, dept: depts.tech },
-        { id: 'EMP-002', name: '田中 美香', gender: 'FEMALE', age: 28, phone: '090-2222-3333', email: 'tanaka@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.tech },
-        { id: 'EMP-003', name: '鈴木 一郎', gender: 'MALE', age: 45, phone: '090-3333-4444', email: 'suzuki@example.com', position: Position.SUB_MANAGER, status: EmployeeStatus.ACTIVE, dept: depts.finance },
-        { id: 'EMP-004', name: '高橋 瞳', gender: 'FEMALE', age: 24, phone: '090-4444-5555', email: 'takahashi@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.finance },
-        { id: 'EMP-005', name: '伊藤 博文', gender: 'MALE', age: 50, phone: '090-5555-6666', email: 'ito@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.gen },
-        { id: 'EMP-006', name: '渡辺 麻衣', gender: 'FEMALE', age: 29, phone: '090-6666-7777', email: 'watanabe@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.tech },
-        { id: 'EMP-007', name: '中村 剛', gender: 'MALE', age: 38, phone: '090-7777-8888', email: 'nakamura@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.tech },
-        { id: 'EMP-008', name: '小林 誠', gender: 'MALE', age: 41, phone: '090-8888-9999', email: 'kobayashi@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.finance },
-        { id: 'EMP-009', name: '加藤 あい', gender: 'FEMALE', age: 31, phone: '090-9999-0000', email: 'kato@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.gen },
-        { id: 'EMP-010', name: '吉田 拓郎', gender: 'MALE', age: 27, phone: '080-1234-5678', email: 'yoshida@example.com', position: Position.STAFF, status: EmployeeStatus.ACTIVE, dept: depts.tech },
-    ];
+    // 4. アカウント作成用の共通パスワード
+    const hashedPassword = await bcrypt.hash('pass123', 10);
 
-    const createdEmployees = [];
-    for (const emp of employees) {
-        const e = await prisma.employee.create({
+    // 5. 特権アカウント (Admin) の作成 - 社員プロファイルなし
+    await prisma.user.create({
+        data: {
+            username: 'admin',
+            password: hashedPassword,
+            role: 'admin'
+        }
+    });
+
+    // 6. 勤怠端末専用アカウント (Terminal) の作成 - 社員プロファイルなし
+    await prisma.user.create({
+        data: {
+            username: 'terminal',
+            password: hashedPassword,
+            role: 'terminal'
+        }
+    });
+
+    // 7. マネージャー (Manager) の作成
+    const managerEmp = await prisma.employee.create({
+        data: {
+            employeeId: 'MGR001',
+            name: '田中 部長',
+            gender: 'MALE',
+            age: 45,
+            phone: '090-1111-2222',
+            email: 'tanaka@example.com',
+            departmentId: itDep.id,
+            position: 'MANAGER',
+            status: 'ACTIVE',
+            dutyStatus: 'NORMAL',
+            workLocation: 'OFFICE',
+            hireDate: new Date('2015-01-01')
+        }
+    });
+
+    await prisma.user.create({
+        data: {
+            username: 'manager',
+            password: hashedPassword,
+            role: 'manager',
+            employeeId: managerEmp.employeeId,
+            departmentId: itDep.id
+        }
+    });
+
+    // 8. 一般社員 (Viewer) の作成
+    const viewerEmp = await prisma.employee.create({
+        data: {
+            employeeId: 'EMP001',
+            name: '佐藤 太郎',
+            gender: 'MALE',
+            age: 28,
+            phone: '080-3333-4444',
+            email: 'sato@example.com',
+            departmentId: salesDep.id,
+            position: 'STAFF',
+            status: 'ACTIVE',
+            dutyStatus: 'NORMAL',
+            workLocation: 'OFFICE',
+            hireDate: new Date('2022-04-01')
+        }
+    });
+
+    await prisma.user.create({
+        data: {
+            username: 'viewer',
+            password: hashedPassword,
+            role: 'viewer',
+            employeeId: viewerEmp.employeeId,
+            departmentId: salesDep.id
+        }
+    });
+
+    // 9. 人事担当者 (HR) の作成
+    const hrEmp = await prisma.employee.create({
+        data: {
+            employeeId: 'HR001',
+            name: '鈴木 花子',
+            gender: 'FEMALE',
+            age: 35,
+            phone: '070-5555-6666',
+            email: 'suzuki@example.com',
+            departmentId: hrDep.id,
+            position: 'GENERAL_AFFAIRS',
+            status: 'ACTIVE',
+            dutyStatus: 'NORMAL',
+            workLocation: 'OFFICE',
+            hireDate: new Date('2018-06-01')
+        }
+    });
+
+    await prisma.user.create({
+        data: {
+            username: 'hruser',
+            password: hashedPassword,
+            role: 'hr',
+            employeeId: hrEmp.employeeId,
+            departmentId: hrDep.id
+        }
+    });
+
+    // 10. 大量のテスト従業員データ作成 (UI/パフォーマンス確認用)
+    console.log('--- 大量のテストデータを生成中...');
+    for (let i = 1; i <= 20; i++) {
+        const eid = `TEST${i.toString().padStart(3, '0')}`;
+        await prisma.employee.create({
             data: {
-                employeeId: emp.id,
-                name: emp.name,
-                gender: emp.gender as Gender,
-                age: emp.age,
-                phone: emp.phone,
-                email: emp.email,
-                position: emp.position,
-                status: emp.status,
-                departmentId: emp.dept.id,
-                workLocation: WorkLocation.OFFICE,
-                hireDate: new Date('2024-01-01')
+                employeeId: eid,
+                name: `テスト社員 ${i}`,
+                gender: i % 2 === 0 ? 'FEMALE' : 'MALE',
+                age: 20 + (i % 30),
+                phone: `000-0000-${i.toString().padStart(4, '0')}`,
+                email: `test${i}@example.com`,
+                departmentId: i % 2 === 0 ? itDep.id : salesDep.id,
+                position: 'STAFF',
+                status: 'ACTIVE',
+                dutyStatus: 'NORMAL',
+                workLocation: i % 5 === 0 ? 'REMOTE' : 'OFFICE',
+                hireDate: new Date()
             }
         });
-        createdEmployees.push(e);
     }
 
-    // --- 4. 创建账号体系 ---
-    const hashedPass = await bcrypt.hash('pass123', 10);
-    const adminPass = await bcrypt.hash('admin123', 10);
-
-    // 管理员 (无员工绑定)
-    await prisma.user.create({ data: { username: 'admin', password: adminPass, role: UserRole.admin } });
-
-    // 终端 (无员工绑定)
-    await prisma.user.create({ data: { username: 'scanner_01', password: await bcrypt.hash('scan123', 10), role: UserRole.terminal } });
-
-    // 员工账号 (绑定 ID)
-    await prisma.user.create({ data: { username: 'sato_emp', password: hashedPass, role: UserRole.viewer, employeeId: 'EMP-001' } });
-    await prisma.user.create({ data: { username: 'tanaka_emp', password: hashedPass, role: UserRole.viewer, employeeId: 'EMP-002' } });
-
-    // --- 5. 初始出勤状态测试数据 (PROJECT_REFORM) ---
-    const today = new Date();
-    const today0700 = new Date(new Date(today).setHours(7, 0, 0, 0));
-
-    // 全员 07:00 初始化
-    for (const emp of createdEmployees) {
-        await prisma.attendance.create({
-            data: {
-                employeeId: emp.employeeId,
-                status: '未出勤-正常',
-                recorder: 'SYSTEM',
-                recordTime: today0700
-            }
-        });
-    }
-
-    // 模拟一些打卡数据 (EMP-001 正常, EMP-002 迟到, EMP-003 请假, EMP-004 外出)
-    await prisma.attendance.create({
+    // 11. 休暇申請サンプルの作成
+    await prisma.leaveRequest.create({
         data: {
-            employeeId: 'EMP-001',
-            status: '出勤-正常',
-            recorder: 'QR_SCANNER',
-            recordTime: new Date(new Date(today).setHours(8, 45, 0, 0))
+            employeeId: viewerEmp.employeeId,
+            type: 'PAID',
+            startDate: new Date(),
+            endDate: new Date(Date.now() + 86400000), // 明日まで
+            reason: '家庭の事情により休暇をいただきます',
+            status: 'PENDING'
         }
     });
 
-    await prisma.attendance.create({
-        data: {
-            employeeId: 'EMP-001',
-            status: '退勤-正常',
-            recorder: 'QR_SCANNER',
-            recordTime: new Date(new Date(today).setHours(18, 5, 0, 0))
-        }
-    });
-
-    await prisma.attendance.create({
-        data: {
-            employeeId: 'EMP-002',
-            status: '出勤-迟到',
-            recorder: 'QR_SCANNER',
-            recordTime: new Date(new Date(today).setHours(10, 30, 0, 0))
-        }
-    });
-
-    await prisma.attendance.create({
-        data: {
-            employeeId: 'EMP-003',
-            status: '休假-有休',
-            recorder: 'ADMIN',
-            reason: '年次休暇',
-            recordTime: new Date(new Date(today).setHours(9, 0, 0, 0))
-        }
-    });
-
-    await prisma.attendance.create({
-        data: {
-            employeeId: 'EMP-004',
-            status: '公司外-现场',
-            recorder: 'ADMIN',
-            recordTime: new Date(new Date(today).setHours(9, 15, 0, 0))
-        }
-    });
-
-    console.log('\n✨ PROJECT_REFORM 数据重组完成！');
+    console.log('\n✨ シードデータの作成が完了しました！');
 }
 
 main()

@@ -48,7 +48,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (username: string, password: string) => {
     const data = await authService.login(username, password);
-    // data 已经是 { accessToken, user }
+    // data は { accessToken, user } の形式
     localStorage.setItem('user', JSON.stringify(data.user));
     setIsAuthenticated(true);
     setUser(data.user);

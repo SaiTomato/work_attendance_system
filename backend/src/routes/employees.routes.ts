@@ -51,7 +51,7 @@ router.post('/:id/assign-rule', requireRole(['admin', 'hr']), async (req, res) =
     try {
         const { ruleId } = req.body;
         await employeeService.assignSpecialRule(req.params.id, ruleId);
-        res.json({ success: true, message: 'Rule assigned successfully' });
+        res.json({ success: true, message: '規則を適用しました' });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -62,7 +62,7 @@ router.delete('/:id', requireRole(['admin', 'hr']), async (req, res) => {
     try {
         const operator = (req as any).user?.username || 'UNKNOWN';
         await employeeService.deleteEmployee(req.params.id, operator);
-        res.json({ success: true, message: 'Employee deleted successfully' });
+        res.json({ success: true, message: '従業員を削除しました' });
     } catch (error: any) {
         console.error('Error deleting employee:', error);
         res.status(500).json({ success: false, message: error.message });

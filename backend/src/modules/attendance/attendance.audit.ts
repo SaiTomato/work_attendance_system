@@ -9,19 +9,19 @@ export class AttendanceAuditService {
         operatedBy: string;
         reason?: string;
     }): Promise<void> {
-        // 使用简单的对象解构，避免潜在的 JSON 循环引用导致的挂起
+        // 循環参照や巨大なオブジェクトによる書き込みの失敗を防ぐため、シンプルなオブジェクトに整形
         const logData = {
             targetId: entry.targetId,
             action: entry.action,
             operatedBy: entry.operatedBy,
             reason: entry.reason || '',
-            // 仅提取关键字段存入 JSON，防止对象过大或含有复杂原型导致写入卡死
+            // 重要なフィールドのみを抽出して格納
             before: entry.before ? { status: entry.before.status, id: entry.before.id } : {},
             after: entry.after ? { status: entry.after.status, id: entry.after.id } : {},
             operatedAt: new Date()
         };
 
-        // 异步执行，不阻塞主业务逻辑的返回
+        // 非同期で実行し、メインのビジネスロジックをブロックしない
         prisma.auditLog.create({ data: logData })
             .then(res => console.log(`[Audit] Success: ${res.id}`))
             .catch(err => console.error(`[Audit] Error:`, err));

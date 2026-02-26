@@ -7,10 +7,10 @@ export const authService = {
             { username, password }
         );
 
-        // 注意：后端返回格式是 { success: true, data: { accessToken, user } }
+        // バックエンドのレスポンス形式: { success: true, data: { accessToken, user } }
         const { accessToken, user } = res.data.data;
 
-        // 存储 Access Token
+        // Access Tokenの保存
         localStorage.setItem('accessToken', accessToken);
 
         return { accessToken, user };

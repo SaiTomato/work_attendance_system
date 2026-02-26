@@ -37,21 +37,21 @@ export const Employees: React.FC = () => {
     }, [searchTerm]);
 
     const handleDelete = async (id: string, name: string) => {
-        if (!window.confirm(`确定要删除员工 [${name}] 吗？\n删除后该员工将无法通过其账号登录系统，但考勤历史记录仍会被保留。`)) {
+        if (!window.confirm(`従業員 [${name}] を削除してもよろしいですか？\n削除後、この従業員はシステムにログインできなくなりますが、過去の考勤記録は保持されます。`)) {
             return;
         }
 
         try {
             const res = await deleteEmployee(id);
             if (res.success) {
-                alert('员工已成功删除');
+                alert('従業員を削除しました');
                 loadData();
             } else {
-                alert(res.message || '删除失败');
+                alert(res.message || '削除に失敗しました');
             }
         } catch (error) {
             console.error('Delete failed:', error);
-            alert('系统错误，删除失败');
+            alert('システムエラーにより削除に失敗しました');
         }
     };
 
@@ -63,8 +63,8 @@ export const Employees: React.FC = () => {
         };
         const labels: Record<EmployeeStatus, string> = {
             PROSPECTIVE: '内定 (Prospective)',
-            ACTIVE: '在职 (Active)',
-            RESIGNED: '离职 (Resigned)',
+            ACTIVE: '在職 (Active)',
+            RESIGNED: '退職 (Resigned)',
         };
         return <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${colors[status]}`}>{labels[status]}</span>;
     };
@@ -76,20 +76,20 @@ export const Employees: React.FC = () => {
             UNPAID_LEAVE: 'bg-rose-50 text-rose-600 border-rose-100',
         };
         const labels: any = {
-            NORMAL: '通常上班',
-            PAID_LEAVE: '有休',
-            UNPAID_LEAVE: '无休',
+            NORMAL: '通常勤務',
+            PAID_LEAVE: '有給休暇',
+            UNPAID_LEAVE: '無給/欠勤',
         };
         return <span className={`px-2 py-0.5 rounded text-[10px] font-black border uppercase tracking-tighter ${colors[status] || colors.NORMAL}`}>{labels[status] || status}</span>;
     };
 
     const getPositionLabel = (pos: Position) => {
         const labels: Record<Position, string> = {
-            STAFF: '员工',
-            SUB_MANAGER: '次长',
-            MANAGER: '部长',
-            GENERAL_AFFAIRS: '总务',
-            CEO: '社长'
+            STAFF: '一般社員',
+            SUB_MANAGER: '主任/係長',
+            MANAGER: '課長/部長',
+            GENERAL_AFFAIRS: '総務',
+            CEO: '代表/社長'
         };
         return labels[pos] || pos;
     };
@@ -98,7 +98,7 @@ export const Employees: React.FC = () => {
         <div className="space-y-6 animate-in fade-in duration-500">
             <header className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">员工情报中心</h1>
+                    <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">従業員情報センター</h1>
                     <p className="text-slate-500 mt-1 uppercase text-xs tracking-widest font-bold">Employee Intelligence OS</p>
                 </div>
                 {isAdminOrHR && (
@@ -106,7 +106,7 @@ export const Employees: React.FC = () => {
                         onClick={() => setIsAddModalOpen(true)}
                         className="btn-premium btn-primary px-6"
                     >
-                        + 员工登记
+                        + 従業員登録
                     </button>
                 )}
             </header>
@@ -118,7 +118,7 @@ export const Employees: React.FC = () => {
                     </span>
                     <input
                         type="text"
-                        placeholder="氏名 or 社員IDで検索..."
+                        placeholder="氏名 または 社員IDで検索..."
                         className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -131,10 +131,10 @@ export const Employees: React.FC = () => {
                     <thead>
                         <tr className="bg-slate-50/50">
                             <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">社員ID</th>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">氏名 / 模式</th>
+                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">氏名 / 状態</th>
                             <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">役職 / 部署</th>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">工作地点</th>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">ステータ斯</th>
+                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">勤務地</th>
+                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">ステータス</th>
                             <th className="px-6 py-4 text-right text-xs font-bold text-slate-400 uppercase tracking-widest">操作</th>
                         </tr>
                     </thead>
@@ -142,7 +142,7 @@ export const Employees: React.FC = () => {
                         {loading ? (
                             <tr><td colSpan={6} className="py-20 text-center text-slate-400">読み込み中...</td></tr>
                         ) : employees.length === 0 ? (
-                            <tr><td colSpan={6} className="py-20 text-center text-slate-400">数据が見つかりません。</td></tr>
+                            <tr><td colSpan={6} className="py-20 text-center text-slate-400">データが見つかりません。</td></tr>
                         ) : (
                             employees.map(emp => (
                                 <tr key={emp.id} className="hover:bg-indigo-50/30 transition-colors">
@@ -164,7 +164,7 @@ export const Employees: React.FC = () => {
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase
                                             ${emp.workLocation === 'OFFICE' ? 'text-blue-600 bg-blue-50' :
                                                 emp.workLocation === 'REMOTE' ? 'text-purple-600 bg-purple-50' : 'text-orange-600 bg-orange-50'}`}>
-                                            {emp.workLocation}
+                                            {emp.workLocation === 'OFFICE' ? 'オフィス' : emp.workLocation === 'REMOTE' ? 'リモート' : '現場'}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4">{getStatusBadge(emp.status)}</td>
@@ -180,7 +180,7 @@ export const Employees: React.FC = () => {
                                                 <button
                                                     onClick={() => handleDelete(emp.id, emp.name)}
                                                     className="p-1.5 bg-rose-50 text-rose-500 rounded-lg hover:bg-rose-600 hover:text-white transition-all border border-rose-100"
-                                                    title="删除"
+                                                    title="削除"
                                                 >
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                                 </button>
@@ -246,17 +246,17 @@ const EmployeeEditForm = ({ employee, departments, onClose, onSaved }: any) => {
 
             if (res.success) {
                 const msg = isEdit
-                    ? '员工情报更新成功！'
-                    : `员工登记成功！\n\n[自动生成的登录账号]\n用户名: ${formData.employeeId}\n初始密码: Pass123`;
+                    ? '従業員情報を更新しました'
+                    : `従業員を登録しました\n\n[ログインアカウント]\nユーザー名: ${formData.employeeId}\n初期パスワード: Pass123`;
                 alert(msg);
                 onSaved();
             } else {
-                alert(res.message || 'Error saving employee');
+                alert(res.message || '保存中にエラーが発生しました');
             }
         } catch (error: any) {
             console.error('Submit Error:', error);
-            const errorMsg = error.response?.data?.message || error.message || '系统提交出错';
-            alert(`操作失败: ${errorMsg}`);
+            const errorMsg = error.response?.data?.message || error.message || 'システムエラーが発生しました';
+            alert(`操作に失敗しました: ${errorMsg}`);
         }
     };
 
@@ -264,7 +264,7 @@ const EmployeeEditForm = ({ employee, departments, onClose, onSaved }: any) => {
         <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="px-8 py-6 bg-slate-900 text-white flex justify-between items-center">
                 <div>
-                    <h2 className="text-xl font-black uppercase tracking-widest">{isEdit ? 'Profile Edit' : 'New Registration'}</h2>
+                    <h2 className="text-xl font-black uppercase tracking-widest">{isEdit ? 'プロフィール編集' : '新規登録'}</h2>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Personnel Management System</p>
                 </div>
                 <button onClick={onClose} className="hover:rotate-90 transition-transform p-2 bg-white/10 rounded-full">
@@ -275,19 +275,19 @@ const EmployeeEditForm = ({ employee, departments, onClose, onSaved }: any) => {
                 {/* Section: Basic Info */}
                 <section>
                     <h3 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-                        <span className="w-8 h-[1px] bg-indigo-600"></span> Basic Information
+                        <span className="w-8 h-[1px] bg-indigo-600"></span> 基本情報
                     </h3>
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Employee ID / 社員番号</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">社員ID / 社員番号</label>
                             <input disabled={isEdit} type="text" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 font-mono font-bold" value={formData.employeeId} onChange={e => setFormData({ ...formData, employeeId: e.target.value })} required />
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Full Name / 氏名</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">氏名 (Full Name)</label>
                             <input type="text" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gender / 性别</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">性別</label>
                             <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.gender} onChange={e => setFormData({ ...formData, gender: e.target.value })} required>
                                 <option value="MALE">男 (Male)</option>
                                 <option value="FEMALE">女 (Female)</option>
@@ -295,15 +295,15 @@ const EmployeeEditForm = ({ employee, departments, onClose, onSaved }: any) => {
                             </select>
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Age / 年龄</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">年齢</label>
                             <input type="number" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.age} onChange={e => setFormData({ ...formData, age: parseInt(e.target.value) || 0 })} required />
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Phone / 电话</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">電話番号</label>
                             <input type="tel" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="090-0000-0000" required />
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email / 邮箱</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">メールアドレス</label>
                             <input type="email" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} placeholder="example@company.com" required />
                         </div>
                     </div>
@@ -312,32 +312,32 @@ const EmployeeEditForm = ({ employee, departments, onClose, onSaved }: any) => {
                 {/* Section: Organization */}
                 <section>
                     <h3 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-                        <span className="w-8 h-[1px] bg-indigo-600"></span> Organization & Role
+                        <span className="w-8 h-[1px] bg-indigo-600"></span> 組織・役職
                     </h3>
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Department / 部署</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">部署</label>
                             <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.departmentId} onChange={e => setFormData({ ...formData, departmentId: e.target.value })} required>
-                                <option value="">选择部门...</option>
+                                <option value="">部署を選択...</option>
                                 {departments.map((d: any) => <option key={d.id} value={d.id}>{d.name} ({d.code})</option>)}
                             </select>
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Position / 役職</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">役職</label>
                             <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.position} onChange={e => setFormData({ ...formData, position: e.target.value })}>
-                                <option value="STAFF">员工 (Staff)</option>
-                                <option value="SUB_MANAGER">次长 (Sub Manager)</option>
-                                <option value="MANAGER">部长 (Manager)</option>
-                                <option value="GENERAL_AFFAIRS">总务 (General Affairs)</option>
-                                <option value="CEO">社长 (CEO)</option>
+                                <option value="STAFF">一般社員 (Staff)</option>
+                                <option value="SUB_MANAGER">主任/係長 (Sub Manager)</option>
+                                <option value="MANAGER">部長 (Manager)</option>
+                                <option value="GENERAL_AFFAIRS">総務 (General Affairs)</option>
+                                <option value="CEO">代表/社長 (CEO)</option>
                             </select>
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lifecycle / 状态</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">雇用状態 (Lifecycle)</label>
                             <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })}>
                                 <option value="PROSPECTIVE">内定 (Prospective)</option>
-                                <option value="ACTIVE">在职 (Active)</option>
-                                <option value="RESIGNED">离职 (Resigned)</option>
+                                <option value="ACTIVE">在職 (Active)</option>
+                                <option value="RESIGNED">退職 (Resigned)</option>
                             </select>
                         </div>
                     </div>
@@ -346,34 +346,34 @@ const EmployeeEditForm = ({ employee, departments, onClose, onSaved }: any) => {
                 {/* Section: Duty & Location */}
                 <section>
                     <h3 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-                        <span className="w-8 h-[1px] bg-indigo-600"></span> Duty Mode & Location
+                        <span className="w-8 h-[1px] bg-indigo-600"></span> 勤務形態・勤務地
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-4">
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Work Location / 打卡模式</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">勤務先 / 打刻モード</label>
                                 <select className="w-full p-3 bg-indigo-50 border border-indigo-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-black text-indigo-700" value={formData.workLocation} onChange={e => setFormData({ ...formData, workLocation: e.target.value })}>
-                                    <option value="OFFICE">🏢 OFFICE (办公室)</option>
-                                    <option value="REMOTE">🏠 REMOTE (在宅/远程)</option>
-                                    <option value="WORKSITE">🏗️ WORKSITE (现场)</option>
+                                    <option value="OFFICE">🏢 オフィス (Office)</option>
+                                    <option value="REMOTE">🏠 リモート (Remote)</option>
+                                    <option value="WORKSITE">🏗️ 現場 (Worksite)</option>
                                 </select>
                             </div>
                         </div>
 
                         <div className="space-y-4">
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Duty Status / 长期模式</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">勤務ステータス</label>
                                 <select className="w-full p-3 bg-amber-50 border border-amber-100 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 font-black text-amber-700" value={formData.dutyStatus} onChange={e => setFormData({ ...formData, dutyStatus: e.target.value })}>
-                                    <option value="NORMAL">✅ 通常上班</option>
-                                    <option value="PAID_LEAVE">🏖️ 有休 (Paid Leave)</option>
-                                    <option value="UNPAID_LEAVE">🚫 无休 (Unpaid Leave)</option>
+                                    <option value="NORMAL">✅ 通常勤務</option>
+                                    <option value="PAID_LEAVE">🏖️ 有給休暇 (Paid Leave)</option>
+                                    <option value="UNPAID_LEAVE">🚫 無給/欠勤 (Unpaid Leave)</option>
                                 </select>
                             </div>
                             {formData.dutyStatus !== 'NORMAL' && (
                                 <div className="space-y-1 animate-in slide-in-from-top-2 duration-300">
-                                    <label className="text-[10px] font-black text-amber-600 uppercase tracking-widest italic">Expiry Date / 自动恢复上班日期</label>
+                                    <label className="text-[10px] font-black text-amber-600 uppercase tracking-widest italic">終了予定日 / 自動復帰日</label>
                                     <input type="date" className="w-full p-3 bg-white border-2 border-amber-200 rounded-xl outline-none focus:border-amber-500 font-bold" value={formData.dutyStatusEndDate ? formData.dutyStatusEndDate.split('T')[0] : ''} onChange={e => setFormData({ ...formData, dutyStatusEndDate: e.target.value })} />
-                                    <p className="text-[9px] text-amber-500 font-bold mt-1">※ 到期后，每天07:00的CRON任务会自动将其转回“通常上班”。</p>
+                                    <p className="text-[9px] text-amber-500 font-bold mt-1">※ 設定した期日の翌日07:00のシステム更新により、自動的に「通常勤務」に戻ります。</p>
                                 </div>
                             )}
                         </div>
@@ -381,9 +381,9 @@ const EmployeeEditForm = ({ employee, departments, onClose, onSaved }: any) => {
                 </section>
 
                 <div className="pt-8 border-t border-slate-100 flex justify-end gap-3 sticky bottom-0 bg-white pb-4 mt-4">
-                    <button type="button" onClick={onClose} className="px-6 py-3 text-slate-400 font-black uppercase text-xs tracking-widest hover:bg-slate-50 rounded-xl transition-all">Cancel</button>
+                    <button type="button" onClick={onClose} className="px-6 py-3 text-slate-400 font-black uppercase text-xs tracking-widest hover:bg-slate-50 rounded-xl transition-all">キャンセル</button>
                     <button type="submit" className="px-10 py-3 bg-slate-900 text-white font-black uppercase text-xs tracking-widest rounded-xl shadow-xl shadow-slate-200 hover:bg-black active:scale-95 transition-all">
-                        {isEdit ? 'Save Changes' : 'Register Now'}
+                        {isEdit ? '変更を保存' : '今すぐ登録'}
                     </button>
                 </div>
             </form>

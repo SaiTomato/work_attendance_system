@@ -3,9 +3,9 @@ export interface DailyStats {
     unattended: number; // 未出勤
     present: number;    // 出勤
     checkout: number;   // 退勤
-    exception: number;  // 异常
-    leave: number;      // 休假
-    outside: number;    // 公司外
+    exception: number;  // 異常
+    leave: number;      // 休暇
+    outside: number;    // 外出
 }
 
 export interface AttendanceRecord {
@@ -21,7 +21,7 @@ export interface AttendanceRecord {
 export interface AuditLog {
     id: string;
     targetId: string;
-    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'OVERRIDE';
+    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'OVERRIDE' | 'MANUAL_FIX';
     before?: any;
     after?: any;
     operatedBy: string;
@@ -47,7 +47,7 @@ export interface User {
 
 export type Position = 'STAFF' | 'SUB_MANAGER' | 'MANAGER' | 'GENERAL_AFFAIRS' | 'CEO';
 export type EmployeeStatus = 'PROSPECTIVE' | 'ACTIVE' | 'RESIGNED';
-export type DutyStatus = 'NORMAL' | 'PAID_LEAVE' | 'UNPAID_LEAVE'; // 追加出勤模式
+export type DutyStatus = 'NORMAL' | 'PAID_LEAVE' | 'UNPAID_LEAVE';
 export type WorkLocation = 'OFFICE' | 'REMOTE' | 'WORKSITE';
 
 export interface EmployeeProfile {
@@ -60,8 +60,8 @@ export interface EmployeeProfile {
     email: string;
     position: Position;
     status: EmployeeStatus;
-    dutyStatus: DutyStatus; // 长期模式
-    dutyStatusEndDate?: string; // 模式结束时间
+    dutyStatus: DutyStatus; // 勤務形態
+    dutyStatusEndDate?: string; // 勤務形態終了日
     workLocation: WorkLocation;
     departmentId: string;
     department?: {

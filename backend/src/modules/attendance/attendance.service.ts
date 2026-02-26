@@ -9,8 +9,8 @@ export class AttendanceService {
         return await attendanceRepo.getDailyRecords(date, filter);
     }
 
-    async getAllLogsToday(page: number = 1, limit: number = 10) {
-        return await attendanceRepo.getAllLogsToday(page, limit);
+    async getAllLogsToday(page: number = 1, limit: number = 10, search?: string) {
+        return await attendanceRepo.getAllLogsToday(page, limit, search);
     }
 
     async getDashboardStats() {
@@ -30,24 +30,24 @@ export class AttendanceService {
         employeeId: string;
         recorder: string;
         action?: 'PUNCH' | 'AUTO' | 'MANUAL';
-        targetStatus?: string; // 仅管理员手动指定时有用
+        targetStatus?: string; // 管理者による手動指定時のみ使用
         reason?: string;
     }) {
-        // 1. 获取员工信息
+        // 1. 従業員情報の取得
         const employee = await prisma.employee.findUnique({
             where: { employeeId: data.employeeId }
         });
-        if (!employee) throw new Error('Employee not found');
+        if (!employee) throw new Error('従業員が見つかりません');
 
-        // 2. 获取当前最新的规则
+        // 2. 現在のルールの取得
         const rule = await prisma.attendanceRule.findFirst({ where: { isDefault: true } });
-        if (!rule) throw new Error('System rule not configured');
+        if (!rule) throw new Error('システムルールが設定されていません');
 
-        // 3. 获取该员工今日此刻之前的最新状态
+        // 3. 当日の最新ステータスを取得
         const latest = await attendanceRepo.getLatestRecordToday(data.employeeId);
         const currentStatus = latest?.status || null;
 
-        // 4. 判定下一个状态
+        // 4. 次のステータスを判定
         let nextStatus: string;
         if (data.action === 'MANUAL' && data.targetStatus) {
             nextStatus = data.targetStatus;
@@ -60,12 +60,12 @@ export class AttendanceService {
             );
         }
 
-        // 5. 拦截重复或非法流转
+        // 5. 重複または不正な遷移のチェック
         if (nextStatus === currentStatus && data.action === 'PUNCH') {
-            throw new Error(`当前状态已是 [${currentStatus}]，无需重复操作`);
+            throw new Error(`現在のステータスは既に [${currentStatus}] です。再操作の必要はありません`);
         }
 
-        // 6. 追加记录
+        // 6. レコードの追加
         const newRecord = await attendanceRepo.createAttendance({
             employeeId: data.employeeId,
             status: nextStatus,
@@ -73,13 +73,13 @@ export class AttendanceService {
             reason: data.reason
         });
 
-        // 7. 如果是管理员手动修正，記録审计日志
+        // 7. 管理者による手動修正の場合、監査ログを記録
         if (data.action === 'MANUAL') {
             await attendanceAudit.log({
-                targetId: newRecord.id, // 关联新生成的考勤记录 ID
+                targetId: newRecord.id,
                 action: 'MANUAL_FIX',
-                before: latest,        // 修改前的最新状态记录
-                after: newRecord,      // 修改后的新记录
+                before: latest,
+                after: newRecord,
                 operatedBy: data.recorder,
                 reason: data.reason
             });
@@ -89,10 +89,10 @@ export class AttendanceService {
     }
 
     /**
-     * 【每日全员重置】 07:00 逻辑
+     * 【毎日全員リセット】 07:00 ロジック
      */
     async dailyReset() {
-        // 1. 获取所有在职员工
+        // 1. 全ての有効な従業員を取得
         const activeEmployees = await prisma.employee.findMany({
             where: { status: 'ACTIVE', deletedAt: null }
         });
@@ -104,16 +104,53 @@ export class AttendanceService {
             return { count: 0, skipped: true };
         }
 
-        const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
         let updatedCount = 0;
         for (const emp of activeEmployees) {
+            // 2. 冪等性チェックとステータス補正
+            const existingToday = await attendanceRepo.getLatestRecordToday(emp.employeeId);
+
+            // 3. 有効な休暇申請があるか確認 (タイムゾーン考慮)
+            const activeLeave = await prisma.leaveRequest.findFirst({
+                where: {
+                    employeeId: emp.employeeId,
+                    status: 'APPROVED',
+                    startDate: { lte: endOfToday },
+                    endDate: { gte: startOfToday }
+                }
+            });
+
+            if (activeLeave) {
+                console.log(`[dailyReset] Found active leave for ${emp.employeeId}: ${activeLeave.type}`);
+            }
+
+            // 既に「実質的な」操作記録（出勤・退勤・外出等）がある場合は自動上書きしない
+            if (existingToday && !existingToday.status.startsWith('未出勤')) {
+                continue;
+            }
+
+            // 既に「未出勤」が記録されており、休暇申請もない場合はスキップ
+            if (existingToday && existingToday.status.startsWith('未出勤') && !activeLeave) {
+                continue;
+            }
+
             let currentDutyStatus = emp.dutyStatus;
             let currentWorkLocation = emp.workLocation;
 
-            // 2. 检查假期是否到期 (如果今日凌晨已超过假期结束日，则恢复正常)
-            if (emp.dutyStatusEndDate && emp.dutyStatusEndDate < todayMidnight) {
-                // 假期已过，重置为正常上班
+            // 4. 有効な休暇がある場合、従業員ステータスを更新し勤怠を設定
+            if (activeLeave) {
+                const mappedStatus = activeLeave.type === 'PAID' ? 'PAID_LEAVE' : 'UNPAID_LEAVE';
+                if (emp.dutyStatus !== mappedStatus) {
+                    await prisma.employee.update({
+                        where: { id: emp.id },
+                        data: { dutyStatus: mappedStatus, dutyStatusEndDate: activeLeave.endDate }
+                    });
+                }
+                currentDutyStatus = mappedStatus;
+            } else if (emp.dutyStatusEndDate && emp.dutyStatusEndDate < startOfToday) {
+                // 休暇期間終了または適用外の場合、通常勤務にリセット
                 await prisma.employee.update({
                     where: { id: emp.id },
                     data: { dutyStatus: 'NORMAL', dutyStatusEndDate: null }
@@ -121,22 +158,22 @@ export class AttendanceService {
                 currentDutyStatus = 'NORMAL';
             }
 
-            // 3. 根据状态决定今日初始化记录
-            let targetStatus = '未出勤-正常';
+            // 5. ステータスに基づき初期値を決定
+            let targetStatus = '未出勤-通常';
             const recorder = 'SYSTEM';
 
             if (currentDutyStatus === 'PAID_LEAVE') {
-                targetStatus = '休假-有休';
+                targetStatus = '休暇-有給';
             } else if (currentDutyStatus === 'UNPAID_LEAVE') {
-                targetStatus = '休假-无休';
+                targetStatus = '休暇-無給';
             } else {
-                // 正常上班的情况，再看地点
+                // 通常勤務の場合、勤務場所を確認
                 if (currentWorkLocation === 'REMOTE') {
-                    targetStatus = '公司外-远程';
+                    targetStatus = '外出-リモート';
                 } else if (currentWorkLocation === 'WORKSITE') {
-                    targetStatus = '公司外-现场';
+                    targetStatus = '外出-現場';
                 } else {
-                    targetStatus = '未出勤-正常';
+                    targetStatus = '未出勤-通常';
                 }
             }
 
@@ -154,11 +191,11 @@ export class AttendanceService {
     }
 
     /**
-     * 【自动缺勤判定】 14:00 逻辑
+     * 【自動欠勤判定】 14:00 ロジック
      */
     async checkAbsence() {
         const now = new Date();
-        // 仅针对 [正常上班] 且 [在办公室] 的员工进行自动判定
+        // [通常勤務] かつ [オフィス出社] の従業員のみを対象に判定
         const targetEmployees = await prisma.employee.findMany({
             where: {
                 status: 'ACTIVE',
@@ -171,14 +208,14 @@ export class AttendanceService {
         let count = 0;
         for (const emp of targetEmployees) {
             const latest = await attendanceRepo.getLatestRecordToday(emp.employeeId);
-            // 如果到了 14:00 还是“未出勤”状态，则判定为缺勤
+            // 14:00時点で「未出勤」状態の場合、欠勤と判定
             if (!latest || latest.status.startsWith('未出勤')) {
                 await attendanceRepo.createAttendance({
                     employeeId: emp.employeeId,
-                    status: '异常-缺勤',
+                    status: '異常-欠勤',
                     recorder: 'SYSTEM_ABSENCE_CHECK',
                     recordTime: now,
-                    reason: '超过14:00未打卡，系统自动判定缺勤'
+                    reason: '14:00を過ぎても打刻がないため、システムにより欠勤と判定'
                 });
                 count++;
             }
@@ -187,10 +224,10 @@ export class AttendanceService {
     }
 
     /**
-     * 【一键自动退勤】强制对所有打过卡的人进行退勤处理
+     * 【一括自動退勤】現在出勤中の全員を退勤処理
      */
     async autoCheckoutAll() {
-        // 仅针对 [正常上班] 且 [在办公室] 的员工进行自动判定
+        // [通常勤務] かつ [オフィス出社] の従業員のみを対象に判定
         const targetEmployees = await prisma.employee.findMany({
             where: {
                 status: 'ACTIVE',
@@ -204,7 +241,7 @@ export class AttendanceService {
         const now = new Date();
         for (const emp of targetEmployees) {
             const latest = await attendanceRepo.getLatestRecordToday(emp.employeeId);
-            // 只有当前处于“出勤”状态的人才需要退勤
+            // 「出勤」状態の人だけを退勤させる
             if (latest?.status.startsWith('出勤')) {
                 await this.createAttendance({
                     employeeId: emp.employeeId,
@@ -218,9 +255,9 @@ export class AttendanceService {
     }
 
     async updateAttendance(id: string, status: string, operator: string, reason: string) {
-        // 在新系统中，"更新"就是"追加一条由管理员指定的状态"
+        // 新システムでは、「更新」は「管理者指定ステータスの追加」を意味します。
 
-        // 1. 处理虚拟 ID (针对尚未有今日记录的员工)
+        // 1. 仮想ID (まだ今日一度も打刻がない人) の処理
         if (id.startsWith('missing-')) {
             const employeeId = id.replace('missing-', '');
             console.log(`[Service] Handling virtual ID fix for employee: ${employeeId}`);
@@ -233,9 +270,9 @@ export class AttendanceService {
             });
         }
 
-        // 2. 处理真实记录 ID
+        // 2. 実レコードIDの処理
         const oldRecord = await prisma.attendance.findUnique({ where: { id } });
-        if (!oldRecord) throw new Error('Record not found in database');
+        if (!oldRecord) throw new Error('データベース上にレコードが見つかりません');
 
         return await this.createAttendance({
             employeeId: oldRecord.employeeId,
@@ -259,7 +296,7 @@ export class AttendanceService {
     }
 
     /**
-     * 将审批通过的假期同步到员工状态及今日考勤记录
+     * 承認された休暇を従業員ステータスおよび本日の勤怠レコードに同期
      */
     async syncLeaveToAttendance(leaveRequestId: string) {
         const leave = await prisma.leaveRequest.findUnique({
@@ -269,7 +306,7 @@ export class AttendanceService {
 
         if (!leave || leave.status !== 'APPROVED') return;
 
-        // 1. 更新员工长期状态
+        // 1. 従業員の長期ステータスを更新
         const dutyStatusMap: any = {
             'PAID': 'PAID_LEAVE',
             'UNPAID': 'UNPAID_LEAVE'
@@ -283,19 +320,58 @@ export class AttendanceService {
             }
         });
 
-        // 2. 如果假期是今天开始，立即追加一条今日考勤记录
-        const todayStr = new Date().toISOString().split('T')[0];
-        const leaveStartStr = leave.startDate.toISOString().split('T')[0];
+        // 2. 休暇期間に本日が含まれる場合、即座に勤怠レコードを反映 (明日のリセットを待たずに)
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
-        if (todayStr === leaveStartStr) {
-            const statusLabel = leave.type === 'PAID' ? '休假-有休' : '休假-无休';
+        if (leave.startDate <= endOfToday && leave.endDate >= startOfToday) {
+            const statusLabel = leave.type === 'PAID' ? '休暇-有給' : '休暇-無給';
             await attendanceRepo.createAttendance({
                 employeeId: leave.employeeId,
                 status: statusLabel,
                 recorder: 'SYSTEM_LEAVE_SYNC',
-                reason: `假期审批通过同步: ${leave.reason || ''}`
+                reason: `休暇承認による同期: ${leave.reason || ''}`
             });
         }
+    }
+
+    /**
+     * 勤怠データを CSV 形式で出力
+     */
+    async exportAttendanceData(startDateStr?: string, endDateStr?: string, search?: string) {
+        const now = new Date();
+        const start = startDateStr ? new Date(startDateStr) : new Date();
+        start.setHours(0, 0, 0, 0);
+
+        const end = endDateStr ? new Date(endDateStr) : new Date();
+        end.setHours(23, 59, 59, 999);
+
+        const records = await attendanceRepo.getRecordsByRange(start, end, search);
+
+        // CSV 行の生成
+        const header = ['従業員番号', '氏名', '打刻日時', '状態', '記録者', '備考/理由'];
+        const rows = records.map(r => [
+            r.employeeId,
+            r.employee.name,
+            r.recordTime.toLocaleString('ja-JP', { hour12: false }),
+            r.status,
+            r.recorder,
+            (r.reason || '').replace(/\n/g, ' ')
+        ]);
+
+        const csvContent = [
+            header.join(','),
+            ...rows.map(row => row.map(cell => {
+                const str = String(cell || '');
+                return `"${str.replace(/"/g, '""')}"`;
+            }).join(','))
+        ].join('\n');
+
+        return {
+            filename: `勤怠データ出力_${start.toISOString().split('T')[0]}.csv`,
+            content: csvContent
+        };
     }
 }
 

@@ -2,7 +2,7 @@ import { api } from './api';
 
 export const leaveApi = {
     /**
-     * 提交请假申请
+     * 休暇申請の提出
      */
     async submitRequest(data: {
         type: 'PAID' | 'UNPAID';
@@ -15,7 +15,7 @@ export const leaveApi = {
     },
 
     /**
-     * 获取我的请假历史
+     * 自分の休暇申請履歴を取得
      */
     async getMyLeaves() {
         const response = await api.get('/leave/my');
@@ -23,7 +23,7 @@ export const leaveApi = {
     },
 
     /**
-     * 获取所有待审批
+     * 全ての承認待ち申請を取得
      */
     async getPendingLeaves() {
         const response = await api.get('/leave/pending');
@@ -31,7 +31,7 @@ export const leaveApi = {
     },
 
     /**
-     * 获取全系统已处理的历史（针对管理层）
+     * 全システムの処理済み履歴を取得（管理職用）
      */
     async getAllProcessedHistory() {
         const response = await api.get('/leave/history');
@@ -39,7 +39,7 @@ export const leaveApi = {
     },
 
     /**
-     * 审批操作
+     * 承認操作
      */
     async updateLeaveStatus(id: string, status: 'APPROVED' | 'REJECTED') {
         const response = await api.patch(`/leave/${id}/status`, { status });
@@ -47,7 +47,7 @@ export const leaveApi = {
     },
 
     /**
-     * 获取未读/待办数量通知
+     * 未読・承認待ち件数の通知を取得
      */
     async getNotificationCount() {
         const response = await api.get('/leave/notifications');
@@ -55,7 +55,7 @@ export const leaveApi = {
     },
 
     /**
-     * 标记已读
+     * 既読としてマーク
      */
     async markAsRead() {
         const response = await api.post('/leave/mark-read');

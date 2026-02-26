@@ -20,7 +20,7 @@ router.post('/', requireRole(['viewer']), async (req: Request, res: Response) =>
         });
 
         if (!user?.employee) {
-            return res.status(400).json({ success: false, message: '未绑定员工档案，无法提交申请' });
+            return res.status(400).json({ success: false, message: '従業員データに関連付けられていないため、申請できません' });
         }
 
         const { type, startDate, endDate, reason } = req.body;
@@ -33,7 +33,7 @@ router.post('/', requireRole(['viewer']), async (req: Request, res: Response) =>
             reason
         });
 
-        res.json({ success: true, data: request, message: '申请提交成功' });
+        res.json({ success: true, data: request, message: '申請を受け付けました' });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -51,7 +51,7 @@ router.get('/my', requireRole(['viewer']), async (req: Request, res: Response) =
         });
 
         if (!user?.employee) {
-            return res.status(400).json({ success: false, message: '未绑定员工' });
+            return res.status(400).json({ success: false, message: '従業員が紐付けられていません' });
         }
 
         const list = await leaveService.getEmployeeRequests(user.employee.employeeId);
@@ -138,7 +138,7 @@ router.patch('/:id/status', requireRole(['admin', 'manager', 'hr']), async (req:
         const operator = req.user?.username || 'SYSTEM';
 
         const updated = await leaveService.updateStatus(req.params.id, status, operator);
-        res.json({ success: true, data: updated, message: `申请已${status === 'APPROVED' ? '批准' : '驳回'}` });
+        res.json({ success: true, data: updated, message: `申請を${status === 'APPROVED' ? '承認' : '却下'}しました` });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }

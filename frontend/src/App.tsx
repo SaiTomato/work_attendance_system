@@ -14,13 +14,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode, allowedRoles?: strin
         return <Navigate to="/login" replace />;
     }
     if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-        // 如果角色不对，跳转到该角色的专属首页
+        // ロールが不一致の場合、それぞれの専用ページへリダイレクト
         if (user.role === 'terminal') return <Navigate to="/scanner" replace />;
         if (user.role === 'viewer') return <Navigate to="/punch-qr" replace />;
-        // Fallback for other roles not explicitly handled or not allowed
-        // The original code had a fallback to '/', which is a reasonable default.
-        // The instruction implies a change to the fallback, but the provided snippet is garbled.
-        // Sticking to the original fallback to '/' for roles not allowed.
         return <Navigate to="/" replace />;
     }
     return <>{children}</>;
@@ -47,9 +43,9 @@ const Header = () => {
 
     React.useEffect(() => {
         checkNotifications();
-        const timer = setInterval(checkNotifications, 60000); // 30秒轮询一次
+        const timer = setInterval(checkNotifications, 60000); // 60秒おきに通知を確認
 
-        // 监听自定义刷新事件 (由 LeaveManagement 触发)
+        // カスタムイベントの待機 (LeaveManagement 等からの通知トリガー)
         window.addEventListener('refreshNotifications', checkNotifications);
 
         return () => {
@@ -70,7 +66,7 @@ const Header = () => {
                     </h1>
                 </div>
                 <div className="flex items-center gap-4">
-                    {/* Mobile Menu Button */}
+                    {/* モバイルメニューボタン */}
                     <button
                         onClick={() => setIsMenuOpen(!isMenuOpen)}
                         className="md:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors relative"
@@ -107,7 +103,7 @@ const Header = () => {
                         {(user?.role === 'admin' || user?.role === 'hr') && (
                             <Link to="/employees" className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors border-l border-slate-200 pl-8">社員情報管理</Link>
                         )}
-                        {/* 只有扫码终端和管理员可见 Terminal Mode */}
+                        {/* ターミナルと管理者の場合に Terminal Mode を表示 */}
                         {(user?.role === 'admin' || user?.role === 'terminal') && (
                             <Link to="/scanner" className="ml-4 px-3 py-1 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-slate-700 transition-colors">Terminal Mode</Link>
                         )}
@@ -130,7 +126,7 @@ const Header = () => {
                 </div>
             </div>
 
-            {/* Mobile Navigation Overlay */}
+            {/* モバイルナビゲーションオーバーレイ */}
             {isMenuOpen && (
                 <div className="md:hidden border-t border-slate-100 bg-white animate-in slide-in-from-top duration-300">
                     <div className="px-4 py-6 space-y-4">
@@ -182,7 +178,7 @@ const AppContent: React.FC = () => {
 
     return (
         <div className="min-h-screen premium-gradient-bg flex flex-col">
-            {/* 扫码终端页面以及终端账号都不显示 Header */}
+            {/* スキャンターミナルページおよびターミナルアカウント、またはスキャナーページでは Header を非表示 */}
             {isAuthenticated && user?.role !== 'terminal' && window.location.pathname !== '/scanner' && <Header />}
 
             <main className="flex-grow">

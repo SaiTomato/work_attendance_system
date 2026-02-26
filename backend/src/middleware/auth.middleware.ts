@@ -1,16 +1,16 @@
-
 import { Request, Response, NextFunction } from 'express';
 import { UserPayload } from '../types';
-
 import { verifyAccessToken } from '../services/tokenService';
 
-// Skill: rbac-check - 所有关键接口必须校验 JWT
+/**
+ * 認証ミドルウェア - すべての重要インターフェースで JWT 認証を検証
+ */
 export const authenticate = (req: Request, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
     const token = authHeader?.split(' ')[1];
 
     if (!token) {
-        return res.status(401).json({ success: false, message: 'Authentication token missing' });
+        return res.status(401).json({ success: false, message: '認証トークンが見つかりません' });
     }
 
     try {
@@ -22,32 +22,36 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
         };
         next();
     } catch (error) {
-        return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+        return res.status(401).json({ success: false, message: 'トークンが無効または期限切れです' });
     }
 };
 
+/**
+ * ロール制御ミドルウェア
+ */
 export const requireRole = (roles: UserPayload['role'][]) => {
     return (req: Request, res: Response, next: NextFunction) => {
         if (!req.user) {
-            return res.status(401).json({ success: false, error: 'Unauthorized' });
+            return res.status(401).json({ success: false, error: '未認証' });
         }
 
         if (!roles.includes(req.user.role)) {
-            return res.status(403).json({ success: false, error: 'Forbidden' });
+            return res.status(403).json({ success: false, error: '権限がありません (アクセス拒否)' });
         }
 
         next();
     };
 };
 
-// Skill: rbac-check - manager 访问数据时必须校验 department_id
-// 需要结合具体业务逻辑，这里提供一个基础校验器
+/**
+ * 部署アクセス制御ミドルウェア - マネージャー（課長/部長）権限時の部署チェック
+ */
 export const checkDepartmentAccess = (targetDepId: string) => {
     return (req: Request, res: Response, next: NextFunction) => {
-        if (req.user?.role === 'admin') return next(); // Admin has all access
+        if (req.user?.role === 'admin') return next(); // 管理者は全権限
 
         if (req.user?.role === 'manager' && req.user.departmentId !== targetDepId) {
-            return res.status(403).json({ success: false, error: 'Access denied for this department' });
+            return res.status(403).json({ success: false, error: 'この部署へのアクセス権限がありません' });
         }
         next();
     };

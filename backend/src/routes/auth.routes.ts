@@ -7,31 +7,30 @@ import { revokeRefreshToken, storeRefreshToken } from '../services/refreshTokenS
 
 const router = express.Router();
 
-// Cookie Options Check
+// Cookie オプションの設定
 const COOKIE_OPTIONS: any = {
     httpOnly: true,
-    secure: false, // Proxy 模式下后端认为是内网 HTTP，且 Same-Origin 不需要 Secure
-    sameSite: 'lax', // Lax 完美支持同源
+    secure: false, // プロキシ環境下のHTTP通信、かつ Same-Origin のため Secure はオフ
+    sameSite: 'lax',
     path: '/',
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7日間
 };
 
 /**
- * Skill: attendance-api-create - 统一响应格式
- * Skill: rbac-check - 用户登入
+ * ログイン処理
  */
 router.post(
     '/login',
     [
-        body('username').notEmpty().withMessage('用户名不能为空'),
-        body('password').notEmpty().withMessage('密码不能为空'),
+        body('username').notEmpty().withMessage('ユーザー名は必須です'),
+        body('password').notEmpty().withMessage('パスワードは必須です'),
     ],
     async (req: Request, res: Response) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
                 success: false,
-                message: '验证失败',
+                message: '入力内容の検証に失敗しました',
                 error: errors.array()
             });
         }
@@ -46,7 +45,7 @@ router.post(
             if (!user) {
                 return res.status(401).json({
                     success: false,
-                    message: '用户名或密码错误'
+                    message: 'ユーザー名またはパスワードが正しくありません'
                 });
             }
 
@@ -54,11 +53,11 @@ router.post(
             if (!validPassword) {
                 return res.status(401).json({
                     success: false,
-                    message: '用户名或密码错误'
+                    message: 'ユーザー名またはパスワードが正しくありません'
                 });
             }
 
-            // JWT トークン生成
+            // JWTトークンの生成
             const accessToken = signAccessToken({
                 id: user.id,
                 username: user.username,
@@ -76,7 +75,7 @@ router.post(
             if (!ok) {
                 return res.status(500).json({
                     success: false,
-                    message: 'Token 存储失败',
+                    message: 'トークンの保存に失敗しました',
                 });
             }
 
@@ -98,23 +97,25 @@ router.post(
             console.error('Login error:', err);
             res.status(500).json({
                 success: false,
-                message: '服务器错误'
+                message: 'サーバーエラーが発生しました'
             });
         }
     }
 );
 
+/**
+ * ログアウト処理
+ */
 router.post('/logout', async (req: Request, res: Response) => {
-    // 调试日志：查看所有接收到的 Cookie
     console.log(`[Auth] Logout cookies received:`, req.cookies);
 
     const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
 
     if (!refreshToken) {
-        console.warn(`[Auth] Logout failed: No refresh token found in cookies or body.`);
+        console.warn(`[Auth] Logout failed: No refresh token found.`);
         return res.status(200).json({
             success: true,
-            message: 'Already logged out (no token found)',
+            message: '既にログアウトされています',
         });
     }
 
@@ -125,7 +126,7 @@ router.post('/logout', async (req: Request, res: Response) => {
             const decoded = verifyRefreshToken(refreshToken);
             userId = decoded.id;
         } catch (e) {
-            console.log(`[Auth] Token verify failed during logout (may be expired), continuing revocation by hash...`);
+            console.log(`[Auth] Token verify failed during logout (may be expired), continuing revocation...`);
         }
 
         const ok = await revokeRefreshToken(refreshToken, userId);
@@ -134,7 +135,6 @@ router.post('/logout', async (req: Request, res: Response) => {
         console.error('[Auth] Logout revocation error:', err);
     }
 
-    // 无论数据库撤销是否成功，都尝试清除客户端 Cookie
     return res
         .status(200)
         .clearCookie('refreshToken', {
@@ -143,11 +143,13 @@ router.post('/logout', async (req: Request, res: Response) => {
         })
         .json({
             success: true,
-            message: 'Successfully logged out'
+            message: 'ログアウトしました'
         });
 });
 
-// トークンリフレッシュ
+/**
+ * トークンリフレッシュ
+ */
 router.post(
     '/refresh',
     async (req: Request, res: Response) => {
@@ -156,7 +158,7 @@ router.post(
         if (!refreshToken) {
             return res.status(401).json({
                 success: false,
-                message: 'Missing refresh token',
+                message: 'リフレッシュトークンが見つかりません',
             });
         }
 
@@ -167,7 +169,7 @@ router.post(
         } catch (err) {
             return res.status(401).json({
                 success: false,
-                message: 'Invalid refresh token',
+                message: 'トークンが無効です',
             });
         }
 
@@ -175,7 +177,7 @@ router.post(
         if (!ok) {
             return res.status(401).json({
                 success: false,
-                message: 'Token revoked or expired',
+                message: 'トークンの期限が切れているか、既に無効化されています',
             });
         }
 
@@ -186,7 +188,7 @@ router.post(
         if (!user) {
             return res.status(401).json({
                 success: false,
-                message: 'User not found',
+                message: 'ユーザーが見つかりません',
             });
         }
 

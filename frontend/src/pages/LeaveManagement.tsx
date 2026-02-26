@@ -8,6 +8,7 @@ export const LeaveManagement: React.FC = () => {
     const [myLeaves, setMyLeaves] = useState<any[]>([]);
     const [systemHistory, setSystemHistory] = useState<any[]>([]);
     const [pendingLeaves, setPendingLeaves] = useState<any[]>([]);
+    const [searchTerm, setSearchTerm] = useState('');
 
     // Form state
     const [submitting, setSubmitting] = useState(false);
@@ -23,7 +24,6 @@ export const LeaveManagement: React.FC = () => {
     const fetchData = async () => {
         try {
             if (isManager) {
-                // 管理层获取待审批 + 全系统历史
                 const [pendingRes, historyRes] = await Promise.all([
                     leaveApi.getPendingLeaves(),
                     leaveApi.getAllProcessedHistory()
@@ -31,11 +31,9 @@ export const LeaveManagement: React.FC = () => {
                 if (pendingRes.success) setPendingLeaves(pendingRes.data);
                 if (historyRes.success) setSystemHistory(historyRes.data);
             } else if (isViewer) {
-                // 员工获取个人历史
                 const myRes = await leaveApi.getMyLeaves();
                 if (myRes.success) {
                     setMyLeaves(myRes.data);
-                    // 如果有未读项，标记已读并刷新 Header
                     if (myRes.data.some((l: any) => !l.isReadByEmployee && l.status !== 'PENDING')) {
                         await leaveApi.markAsRead();
                         window.dispatchEvent(new CustomEvent('refreshNotifications'));
@@ -58,7 +56,7 @@ export const LeaveManagement: React.FC = () => {
         try {
             const res = await leaveApi.submitRequest({ type, startDate, endDate, reason });
             if (res.success) {
-                setMsg({ type: 'success', text: '申请已提交，等待审核。' });
+                setMsg({ type: 'success', text: '申請が提出されました。承認をお待ちください。' });
                 setStartDate('');
                 setEndDate('');
                 setReason('');
@@ -66,7 +64,7 @@ export const LeaveManagement: React.FC = () => {
                 window.dispatchEvent(new CustomEvent('refreshNotifications'));
             }
         } catch (err: any) {
-            setMsg({ type: 'error', text: err.response?.data?.message || '提交失败' });
+            setMsg({ type: 'error', text: err.response?.data?.message || '提出に失敗しました' });
         } finally {
             setSubmitting(false);
         }
@@ -84,16 +82,26 @@ export const LeaveManagement: React.FC = () => {
         }
     };
 
+    const filteredHistory = (isManager ? systemHistory : myLeaves).filter(leave => {
+        const searchStr = searchTerm.toLowerCase();
+        return (
+            (leave.employee?.name || '').toLowerCase().includes(searchStr) ||
+            (leave.employee?.employeeId || '').toLowerCase().includes(searchStr) ||
+            (leave.reason || '').toLowerCase().includes(searchStr) ||
+            (leave.approvedBy || '').toLowerCase().includes(searchStr)
+        );
+    });
+
     return (
         <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-700">
             {/* Header Section */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-200 pb-8">
                 <div>
                     <h1 className="text-4xl font-black text-slate-900 tracking-tight">
-                        {isManager ? '休暇审批' : '申请与'} <span className="text-indigo-600">{isManager ? '与管理' : '审批'}</span>
+                        {isManager ? '休暇承認 ' : '休暇申請と '} <span className="text-indigo-600">{isManager ? '管理' : '状況確認'}</span>
                     </h1>
                     <p className="text-slate-500 mt-2 font-medium">
-                        {isManager ? '全システムの休暇申請の管理と审计' : '休暇・欠勤申請の管理とステータス确认'}
+                        {isManager ? '全システムの休暇申請の管理と監査を行います' : '休暇・欠勤申請の提出とステータス確認が可能です'}
                     </p>
                 </div>
             </div>
@@ -117,7 +125,7 @@ export const LeaveManagement: React.FC = () => {
                                         className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700 transition-all"
                                     >
                                         <option value="PAID">有給休暇 (Paid Leave)</option>
-                                        <option value="UNPAID">無給休暇/缺勤 (Unpaid Leave)</option>
+                                        <option value="UNPAID">無給休暇/欠勤 (Unpaid Leave)</option>
                                     </select>
                                 </div>
 
@@ -182,21 +190,21 @@ export const LeaveManagement: React.FC = () => {
 
                             <h2 className="text-2xl font-black mb-6 relative z-10 flex items-center gap-3">
                                 <span className="w-2 h-8 bg-white rounded-full"></span>
-                                待审批申请列表
+                                承認待ち申請一覧
                                 <span className="bg-white/20 px-3 py-1 rounded-full text-sm font-black">{pendingLeaves.length}</span>
                             </h2>
 
                             <div className="space-y-4 relative z-10">
                                 {pendingLeaves.length === 0 ? (
                                     <div className="py-12 border-2 border-dashed border-white/20 rounded-3xl flex flex-col items-center justify-center opacity-50">
-                                        <p className="font-bold">目前没有需要处理的申请</p>
+                                        <p className="font-bold">現在、未処理の申請はありません</p>
                                     </div>
                                 ) : (
                                     pendingLeaves.map(leave => (
                                         <div key={leave.id} className="bg-white/10 backdrop-blur-md border border-white/10 rounded-3xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 hover:bg-white/15 transition-all">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-xl font-black">
-                                                    {leave.employee.name.charAt(0)}
+                                                    {(leave.employee.name || 'E').charAt(0)}
                                                 </div>
                                                 <div>
                                                     <p className="font-black text-lg leading-tight text-white">{leave.employee.name}</p>
@@ -216,13 +224,13 @@ export const LeaveManagement: React.FC = () => {
                                                     onClick={() => handleApproval(leave.id, 'REJECTED')}
                                                     className="px-6 py-2 rounded-xl bg-rose-500/20 text-rose-200 border border-rose-500/30 hover:bg-rose-500 hover:text-white transition-all font-bold text-sm"
                                                 >
-                                                    驳回
+                                                    却下
                                                 </button>
                                                 <button
                                                     onClick={() => handleApproval(leave.id, 'APPROVED')}
                                                     className="px-6 py-2 rounded-xl bg-emerald-500 text-slate-900 hover:bg-white transition-all font-black text-sm"
                                                 >
-                                                    批准
+                                                    承認
                                                 </button>
                                             </div>
                                         </div>
@@ -236,49 +244,74 @@ export const LeaveManagement: React.FC = () => {
                     <div className="glass-card p-8">
                         <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
                             <span className="w-2 h-6 bg-slate-200 rounded-full"></span>
-                            {isManager ? '全系统处理记录 (Audit Trail)' : '我的申请历史'}
+                            {isManager ? '全システム処理記録 (監査ログ)' : '個人申請履歴'}
                         </h2>
 
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">
                                 <thead>
                                     <tr className="border-b border-slate-100">
-                                        {isManager && <th className="py-4 text-xs font-black uppercase tracking-widest text-slate-400">申请人</th>}
-                                        <th className="py-4 text-xs font-black uppercase tracking-widest text-slate-400">类型</th>
-                                        <th className="py-4 text-xs font-black uppercase tracking-widest text-slate-400">期间</th>
-                                        {isManager && <th className="py-4 text-xs font-black uppercase tracking-widest text-slate-400">处理人</th>}
-                                        <th className="py-4 text-xs font-black uppercase tracking-widest text-slate-400">状态</th>
+                                        <th className="py-4 text-xs font-black uppercase tracking-widest text-slate-400">
+                                            <div className="flex items-center justify-between gap-4">
+                                                <span>{isManager ? '申請者' : 'タイプ'}</span>
+                                                <div className="relative group/search inline-block font-normal normal-case">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="検索..."
+                                                        value={searchTerm}
+                                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                                        className="pl-8 pr-3 py-1 bg-slate-100/50 border border-transparent rounded-lg text-[10px] font-bold focus:bg-white focus:border-indigo-100 outline-none w-32 transition-all"
+                                                    />
+                                                    <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </th>
+                                        {isManager && <th className="py-4 text-xs font-black uppercase tracking-widest text-slate-400">タイプ</th>}
+                                        <th className="py-4 text-xs font-black uppercase tracking-widest text-slate-400">期間</th>
+                                        {isManager && <th className="py-4 text-xs font-black uppercase tracking-widest text-slate-400">承認者</th>}
+                                        <th className="py-4 text-xs font-black uppercase tracking-widest text-slate-400">ステータス</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {(isManager ? systemHistory : myLeaves).length === 0 ? (
+                                    {filteredHistory.length === 0 ? (
                                         <tr>
-                                            <td colSpan={5} className="py-12 text-center text-slate-400 font-medium italic">暂无记录</td>
+                                            <td colSpan={5} className="py-12 text-center text-slate-400 font-medium italic">記録なし</td>
                                         </tr>
                                     ) : (
-                                        (isManager ? systemHistory : myLeaves).map(leave => (
+                                        filteredHistory.map(leave => (
                                             <tr key={leave.id} className={`border-b border-slate-50 group hover:bg-slate-50/50 transition-colors ${!isManager && !leave.isReadByEmployee && leave.status !== 'PENDING' ? 'bg-indigo-50/30' : ''}`}>
+                                                <td className="py-5">
+                                                    <span className="font-bold text-slate-900">{isManager ? leave.employee.name : (leave.type === 'PAID' ? '有給休暇' : '無給休暇')}</span>
+                                                </td>
                                                 {isManager && (
                                                     <td className="py-5">
-                                                        <span className="font-bold text-slate-900">{leave.employee.name}</span>
+                                                        <div className="flex flex-col">
+                                                            <span className="font-bold text-slate-700">
+                                                                {leave.type === 'PAID' ? '有給休暇' : '無給休暇'}
+                                                            </span>
+                                                            {leave.reason && (
+                                                                <span className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[120px]" title={leave.reason}>
+                                                                    {leave.reason}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 )}
-                                                <td className="py-5">
-                                                    <div className="flex flex-col">
-                                                        <span className="font-bold text-slate-700">
-                                                            {leave.type === 'PAID' ? '有給休暇' : '無給休暇'}
-                                                        </span>
+                                                {!isManager && (
+                                                    <td className="py-5">
                                                         {leave.reason && (
                                                             <span className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[120px]" title={leave.reason}>
                                                                 {leave.reason}
                                                             </span>
                                                         )}
-                                                    </div>
-                                                </td>
+                                                    </td>
+                                                )}
                                                 <td className="py-5">
                                                     <div className="flex flex-col">
                                                         <span className="font-bold text-slate-900">{format(new Date(leave.startDate), 'yyyy/MM/dd')}</span>
-                                                        <span className="text-[10px] text-slate-400 font-black">至 {format(new Date(leave.endDate), 'yyyy/MM/dd')}</span>
+                                                        <span className="text-[10px] text-slate-400 font-black">〜 {format(new Date(leave.endDate), 'yyyy/MM/dd')}</span>
                                                     </div>
                                                 </td>
                                                 {isManager && (
@@ -292,10 +325,10 @@ export const LeaveManagement: React.FC = () => {
                                                             leave.status === 'REJECTED' ? 'bg-rose-100 text-rose-700' :
                                                                 'bg-amber-100 text-amber-700'
                                                             }`}>
-                                                            {leave.status}
+                                                            {leave.status === 'APPROVED' ? '承認済' : leave.status === 'REJECTED' ? '却下済' : '申請中'}
                                                         </div>
                                                         {!isManager && !leave.isReadByEmployee && leave.status !== 'PENDING' && (
-                                                            <span className="w-2 h-2 bg-indigo-600 rounded-full animate-pulse" title="新结果"></span>
+                                                            <span className="w-2 h-2 bg-indigo-600 rounded-full animate-pulse" title="新規結果"></span>
                                                         )}
                                                     </div>
                                                 </td>
@@ -311,3 +344,5 @@ export const LeaveManagement: React.FC = () => {
         </div>
     );
 };
+
+export default LeaveManagement;

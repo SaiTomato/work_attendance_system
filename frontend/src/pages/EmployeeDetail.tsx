@@ -38,9 +38,9 @@ export const EmployeeDetail: React.FC = () => {
         if (status.startsWith('未出勤')) return <span className={`${base} bg-slate-50 text-slate-400 border-slate-200`}>{status}</span>;
         if (status.startsWith('出勤')) return <span className={`${base} bg-emerald-50 text-emerald-600 border-emerald-100`}>{status}</span>;
         if (status.startsWith('退勤')) return <span className={`${base} bg-indigo-50 text-indigo-600 border-indigo-100`}>{status}</span>;
-        if (status.startsWith('异常')) return <span className={`${base} bg-rose-50 text-rose-600 border-rose-100`}>{status}</span>;
-        if (status.startsWith('休假')) return <span className={`${base} bg-amber-50 text-amber-600 border-amber-100`}>{status}</span>;
-        if (status.startsWith('公司外')) return <span className={`${base} bg-purple-50 text-purple-600 border-purple-100`}>{status}</span>;
+        if (status.startsWith('異常')) return <span className={`${base} bg-rose-50 text-rose-600 border-rose-100`}>{status}</span>;
+        if (status.startsWith('休暇')) return <span className={`${base} bg-amber-50 text-amber-600 border-amber-100`}>{status}</span>;
+        if (status.startsWith('外出')) return <span className={`${base} bg-purple-50 text-purple-600 border-purple-100`}>{status}</span>;
         return <span className={base}>{status}</span>;
     };
 
@@ -55,10 +55,10 @@ export const EmployeeDetail: React.FC = () => {
             <header className="flex items-center justify-between">
                 <div>
                     <button onClick={() => navigate(-1)} className="text-xs font-bold text-slate-400 hover:text-slate-600 mb-2 flex items-center gap-1">
-                        &larr; BACK TO LIST
+                        &larr; 一覧に戻る
                     </button>
                     <h1 className="text-3xl font-black text-slate-900 tracking-tight">打刻履歴詳細</h1>
-                    <p className="text-slate-500 font-mono text-xs mt-1 uppercase tracking-widest">Employee: {employeeId}</p>
+                    <p className="text-slate-500 font-mono text-xs mt-1 uppercase tracking-widest">従業員ID: {employeeId}</p>
                 </div>
             </header>
 
@@ -66,7 +66,7 @@ export const EmployeeDetail: React.FC = () => {
                 {/* Left: History Table */}
                 <div className="lg:col-span-2 glass-card overflow-hidden">
                     <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50">
-                        <h3 className="font-black text-xs uppercase tracking-[0.2em] text-slate-400">Activity Stream</h3>
+                        <h3 className="font-black text-xs uppercase tracking-[0.2em] text-slate-400">アクティビティ履歴</h3>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="min-w-full">
@@ -75,12 +75,12 @@ export const EmployeeDetail: React.FC = () => {
                                     <th className="px-8 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">記録日時</th>
                                     <th className="px-8 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">状態</th>
                                     <th className="px-8 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">記録者</th>
-                                    <th className="px-8 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">AUDIT</th>
+                                    <th className="px-8 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">監査</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {history.length === 0 ? (
-                                    <tr><td colSpan={4} className="py-20 text-center text-slate-400 italic">No attendance records found for this employee.</td></tr>
+                                    <tr><td colSpan={4} className="py-20 text-center text-slate-400 italic">該当する記録が見つかりません。</td></tr>
                                 ) : (
                                     history.map(record => (
                                         <tr key={record.id} className="hover:bg-slate-50 transition-colors group">
@@ -98,7 +98,7 @@ export const EmployeeDetail: React.FC = () => {
                                                     onClick={() => handleViewLogs(record)}
                                                     className="text-indigo-600 hover:text-indigo-900 font-black text-[10px] uppercase tracking-tighter transition-all opacity-0 group-hover:opacity-100"
                                                 >
-                                                    View Trace &rarr;
+                                                    詳細を表示 &rarr;
                                                 </button>
                                             </td>
                                         </tr>
@@ -113,7 +113,7 @@ export const EmployeeDetail: React.FC = () => {
                 <div className="lg:col-span-1 space-y-4">
                     <div className="glass-card p-8 border-2 border-indigo-50">
                         <h3 className="text-xl font-black text-slate-900 tracking-tight mb-2">監査トレース</h3>
-                        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-6 border-b border-slate-100 pb-4">Audit Log Observer</p>
+                        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-6 border-b border-slate-100 pb-4">監査ログ</p>
 
                         {!showLogs ? (
                             <div className="py-20 text-center space-y-4">
@@ -125,7 +125,7 @@ export const EmployeeDetail: React.FC = () => {
                         ) : (
                             <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
                                 <div className="bg-indigo-600 p-4 rounded-2xl text-white shadow-xl shadow-indigo-100 mb-8">
-                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Selected Record</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-60">選択されたレコード</p>
                                     <p className="font-bold mt-1 tracking-tight">{selectedRecord?.status}</p>
                                     <p className="text-[10px] font-mono mt-2 opacity-80">{selectedRecord?.id}</p>
                                 </div>
@@ -133,7 +133,7 @@ export const EmployeeDetail: React.FC = () => {
                                 <div className="space-y-4">
                                     {logs.length === 0 ? (
                                         <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-400 font-bold border border-dashed border-slate-200">
-                                            No mutations detected.
+                                            変更履歴はありません。
                                         </div>
                                     ) : (
                                         logs.map(log => (
@@ -141,11 +141,11 @@ export const EmployeeDetail: React.FC = () => {
                                                 <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-white border-4 border-indigo-600"></div>
                                                 <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
                                                     <div className="flex justify-between items-center">
-                                                        <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded uppercase">{log.action}</span>
+                                                        <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded uppercase">{log.action === 'MANUAL_FIX' ? '手動修正' : log.action}</span>
                                                         <span className="text-[10px] font-mono text-slate-400">{new Date(log.operatedAt).toLocaleTimeString()}</span>
                                                     </div>
                                                     <div className="text-xs font-bold text-slate-700">
-                                                        Operated by: <span className="text-indigo-600">{log.operatedBy}</span>
+                                                        操作者: <span className="text-indigo-600">{log.operatedBy}</span>
                                                     </div>
                                                     {log.reason && (
                                                         <div className="p-2 bg-amber-50 rounded-lg text-amber-700 text-[10px] font-bold italic">
