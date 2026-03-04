@@ -7,11 +7,33 @@ import { attendanceService } from '../modules/attendance/attendance.service';
 export const initScheduler = () => {
     console.log('[Scheduler] 勤怠自動スケジューラが起動しました');
 
-    // 0. 起動時即時チェック (07:00のリセット時にサーバーが停止していた場合の補填)
-    console.log('[Scheduler] 起動時の勤怠チェックを実行中...');
-    attendanceService.dailyReset()
-        .then(result => console.log(`[Scheduler] 起動時チェック完了。初期化人数: ${result.count}`))
-        .catch(err => console.error('[Scheduler] 起動時チェック失敗:', err));
+    // 0. 起動時即時チェック (サーバー停止中にタスク時間が過ぎてしまった場合の補填)
+    const runStartupCheck = async () => {
+        console.log('[Scheduler] 起動時の勤怠補填チェックを実行中...');
+        const now = new Date();
+        const hour = now.getHours();
+
+        try {
+            // 必然的に実行 (今日の土台作成)
+            const resetRes = await attendanceService.dailyReset();
+            console.log(`[Scheduler] 起動時リセット完了。初期化人数: ${resetRes.count}`);
+
+            // 14:00 を過ぎて起動した場合、欠勤判定を実行
+            if (hour >= 14) {
+                const absenceRes = await attendanceService.checkAbsence();
+                console.log(`[Scheduler] 14:00 補填判定完了。欠勤フラグ人数: ${absenceRes.count}`);
+            }
+
+            // 20:00 を過ぎて起動した場合、自動退勤を実行
+            if (hour >= 20) {
+                const checkoutRes = await attendanceService.autoCheckoutAll();
+                console.log(`[Scheduler] 20:00 補填判定完了。自動退勤人数: ${checkoutRes.count}`);
+            }
+        } catch (err) {
+            console.error('[Scheduler] 起動時チェック失敗:', err);
+        }
+    };
+    runStartupCheck();
 
     // 1. 毎日 07:00 全員初期化 (未出勤ステータスの追加)
     cron.schedule('0 7 * * *', async () => {

@@ -31,11 +31,35 @@ export const leaveApi = {
     },
 
     /**
-     * 全システムの処理済み履歴を取得（管理職用）
+     * 全システムの処理済み履歴を取得（管理職用 - ページネーション対応）
      */
-    async getAllProcessedHistory() {
-        const response = await api.get('/leave/history');
+    async getAllProcessedHistory(filters: {
+        search?: string,
+        page?: number,
+        limit?: number,
+        sortField?: string,
+        sortOrder?: 'asc' | 'desc'
+    } = {}) {
+        const response = await api.get('/leave/history', { params: filters });
         return response.data;
+    },
+
+    /**
+     * 履歴を CSV としてダウンロード
+     */
+    async downloadLeaveHistoryCsv(searchTerm?: string) {
+        const res = await api.get('/leave/history/export', {
+            params: { search: searchTerm },
+            responseType: 'blob'
+        });
+
+        const url = window.URL.createObjectURL(new Blob([res.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `leave_history_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
     },
 
     /**

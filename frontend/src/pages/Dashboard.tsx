@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { fetchDashboardStats, punchAttendance, fetchDailyLogsToday, triggerDailyReset, triggerAutoCheckout, downloadAttendanceReport } from '../services/attendance.api';
+import { fetchDashboardStats, punchAttendance, fetchDailyLogsToday, triggerDailyReset, triggerAutoCheckout, downloadAttendanceReport, fetchEmployeeHistory } from '../services/attendance.api';
 import { DailyStats, AttendanceRecord } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
-// Skill: frontend-admin-view
 export const Dashboard: React.FC = () => {
     const [stats, setStats] = useState<DailyStats | null>(null);
     const [mainLogs, setMainLogs] = useState<AttendanceRecord[]>([]);
+    const [personalHistory, setPersonalHistory] = useState<AttendanceRecord[]>([]);
     const [totalLogs, setTotalLogs] = useState(0);
     const [currentPage, setCurrentPage] = useState(1);
     const [error, setError] = useState<string | null>(null);
@@ -21,13 +21,23 @@ export const Dashboard: React.FC = () => {
     const [search, setSearch] = useState('');
 
     const loadData = (page: number = 1, searchQuery: string = '') => {
+        if (isViewer) {
+            // 従業員向け：自分の履歴のみ表示
+            if (user?.employeeId) {
+                fetchEmployeeHistory(user.employeeId).then(res => {
+                    if (res.success && res.data) setPersonalHistory(res.data.records);
+                });
+            }
+            return;
+        }
+
         if (page === 1) {
             fetchDashboardStats().then(res => {
                 if (res.success && res.data) setStats(res.data);
             });
         }
 
-        // 本日のリアルタイムログを表示 (ページネーション・検索対応)
+        // 管理者向け：本日のリアルタイムログを表示
         fetchDailyLogsToday(page, 10, searchQuery).then(res => {
             if (res.success && res.data) {
                 setMainLogs(res.data.logs);
@@ -41,10 +51,9 @@ export const Dashboard: React.FC = () => {
 
     useEffect(() => {
         loadData(currentPage, search);
-        // 通常の更新タイマー (検索中は停止または同期)
         const timer = setInterval(() => loadData(currentPage, search), 30000);
         return () => clearInterval(timer);
-    }, [currentPage, search]);
+    }, [currentPage, search, user?.employeeId]);
 
     const handlePunch = async () => {
         setIsPunching(true);
@@ -107,7 +116,7 @@ export const Dashboard: React.FC = () => {
         </div>
     );
 
-    if (!stats) return (
+    if (!isViewer && !stats) return (
         <div className="flex flex-col items-center justify-center min-h-[400px]">
             <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
             <p className="mt-4 text-slate-500 font-medium">データを読み込み中...</p>
@@ -118,8 +127,12 @@ export const Dashboard: React.FC = () => {
         <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight">ホーム</h2>
-                    <p className="text-slate-500 mt-1">本日の統計データ</p>
+                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight">
+                        {isViewer ? `こんにちは、${user?.username}さん` : 'ホーム'}
+                    </h2>
+                    <p className="text-slate-500 mt-1">
+                        {isViewer ? 'あなたの本日の打刻状況です' : '本日の統計データ'}
+                    </p>
                 </div>
                 <div className="flex items-center gap-3">
                     <button
@@ -132,21 +145,6 @@ export const Dashboard: React.FC = () => {
                         ) : <ClockIcon />}
                         {isPunching ? '処理中...' : '出勤/退勤打刻'}
                     </button>
-                    {!isViewer && (
-                        <button
-                            onClick={async () => {
-                                try {
-                                    await downloadAttendanceReport();
-                                } catch (error) {
-                                    alert('レポートの出力に失敗しました');
-                                }
-                            }}
-                            className="btn-premium bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 shadow-sm"
-                        >
-                            レポート出力
-                        </button>
-                    )}
-                    <button onClick={() => loadData(currentPage)} className="btn-premium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">データ更新</button>
                 </div>
             </header>
 
@@ -203,59 +201,89 @@ export const Dashboard: React.FC = () => {
                 </div>
             )}
 
-            {/* Stat Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                <StatCard
-                    label="全従業員 (Total)"
-                    value={stats.totalEmployees}
-                    icon={<UsersIcon />}
-                    color="indigo"
-                    onClick={() => selectCategory('all')}
-                />
-                <StatCard
-                    label="未出勤 (Unattended)"
-                    value={stats.unattended}
-                    icon={<ClockIcon />}
-                    color="slate"
-                    onClick={() => selectCategory('unattended')}
-                />
-                <StatCard
-                    label="出勤中 (Present)"
-                    value={stats.present}
-                    icon={<CheckCircleIcon />}
-                    color="emerald"
-                    onClick={() => selectCategory('present')}
-                />
-                <StatCard
-                    label="退勤済 (Checked Out)"
-                    value={stats.checkout}
-                    icon={<ArrowRightOnRectangleIcon />}
-                    color="cyan"
-                    onClick={() => selectCategory('checkout')}
-                />
-                <StatCard
-                    label="異常 (Exception)"
-                    value={stats.exception}
-                    icon={<ExclamationTriangleIcon />}
-                    color="rose"
-                    isCritical={stats.exception > 0}
-                    onClick={() => selectCategory('exceptions')}
-                />
-                <StatCard
-                    label="休暇 (Leave)"
-                    value={stats.leave}
-                    icon={<CalendarIcon />}
-                    color="amber"
-                    onClick={() => selectCategory('leave')}
-                />
-                <StatCard
-                    label="外出 (Offsite)"
-                    value={stats.outside}
-                    icon={<BuildingOfficeIcon />}
-                    color="purple"
-                    onClick={() => selectCategory('outside')}
-                />
-            </div>
+            {/* Stat Cards / Personal Status */}
+            {isViewer ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="glass-card p-8 flex items-center justify-between border-l-8 border-l-indigo-600">
+                        <div>
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">現在のステータス</p>
+                            <h3 className="text-3xl font-black mt-2 text-slate-900">
+                                {personalHistory[0]?.status || '未打刻'}
+                            </h3>
+                            <p className="text-sm text-slate-500 mt-2 font-medium">
+                                最終更新: {personalHistory[0]?.recordTime ? new Date(personalHistory[0]?.recordTime).toLocaleString() : '---'}
+                            </p>
+                        </div>
+                        <div className="p-4 bg-indigo-50 rounded-2xl text-indigo-600">
+                            <ClockIcon />
+                        </div>
+                    </div>
+                    <div className="glass-card p-8 flex flex-col justify-center">
+                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">クイックアクション</p>
+                        <div className="flex gap-4">
+                            <button
+                                onClick={() => navigate('/leave')}
+                                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-all"
+                            >
+                                休暇申請を行う
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    <StatCard
+                        label="全従業員 (Total)"
+                        value={stats?.totalEmployees || 0}
+                        icon={<UsersIcon />}
+                        color="indigo"
+                        onClick={() => selectCategory('all')}
+                    />
+                    <StatCard
+                        label="未出勤 (Unattended)"
+                        value={stats?.unattended || 0}
+                        icon={<ClockIcon />}
+                        color="slate"
+                        onClick={() => selectCategory('unattended')}
+                    />
+                    <StatCard
+                        label="出勤中 (Present)"
+                        value={stats?.present || 0}
+                        icon={<CheckCircleIcon />}
+                        color="emerald"
+                        onClick={() => selectCategory('present')}
+                    />
+                    <StatCard
+                        label="退勤済 (Checked Out)"
+                        value={stats?.checkout || 0}
+                        icon={<ArrowRightOnRectangleIcon />}
+                        color="cyan"
+                        onClick={() => selectCategory('checkout')}
+                    />
+                    <StatCard
+                        label="異常 (Exception)"
+                        value={stats?.exception || 0}
+                        icon={<ExclamationTriangleIcon />}
+                        color="rose"
+                        isCritical={(stats?.exception || 0) > 0}
+                        onClick={() => selectCategory('exceptions')}
+                    />
+                    <StatCard
+                        label="休暇 (Leave)"
+                        value={stats?.leave || 0}
+                        icon={<CalendarIcon />}
+                        color="amber"
+                        onClick={() => selectCategory('leave')}
+                    />
+                    <StatCard
+                        label="外出 (Offsite)"
+                        value={stats?.outside || 0}
+                        icon={<BuildingOfficeIcon />}
+                        color="purple"
+                        onClick={() => selectCategory('outside')}
+                    />
+                </div>
+            )}
 
             {/* リアルタイム打刻ログ */}
             <div className="glass-card overflow-hidden">
@@ -265,44 +293,74 @@ export const Dashboard: React.FC = () => {
                             <BoltIcon />
                         </div>
                         <h3 className="text-xl font-bold text-slate-900">
-                            打刻ログ・リアルタイムフロー
+                            {isViewer ? 'あなたの直近の打刻履歴' : '打刻ログ・リアルタイムフロー'}
                         </h3>
                     </div>
-                    <div className="flex items-center gap-4">
-                        <div className="relative group/search">
-                            <input
-                                type="text"
-                                placeholder="名前・IDで検索..."
-                                value={search}
-                                onChange={(e) => {
-                                    setSearch(e.target.value);
-                                    setCurrentPage(1);
-                                }}
-                                className="pl-10 pr-4 py-2 bg-slate-100/50 border border-transparent rounded-xl text-xs font-bold focus:bg-white focus:border-indigo-100 focus:ring-4 focus:ring-indigo-500/5 outline-none w-40 md:w-64 transition-all"
-                            />
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within/search:text-indigo-500 transition-colors">
-                                <SearchIcon />
+                    {!isViewer && (
+                        <div className="flex flex-wrap items-center justify-end gap-3 md:gap-4">
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => loadData(currentPage)}
+                                    className="px-3 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center gap-1.5"
+                                >
+                                    <ArrowPathIcon />
+                                    データ更新
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        try {
+                                            const today = new Date().toISOString().split('T')[0];
+                                            await downloadAttendanceReport(today, today, search);
+                                        } catch (error) {
+                                            alert('レポートの出力に失敗しました');
+                                        }
+                                    }}
+                                    className="px-3 py-1.5 bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 rounded-lg shadow-sm text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5"
+                                >
+                                    <DocumentArrowDownIcon />
+                                    レポート出力
+                                </button>
+                            </div>
+
+                            <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
+
+                            <div className="flex items-center gap-3">
+                                <div className="relative group/search">
+                                    <input
+                                        type="text"
+                                        placeholder="名前・IDで検索..."
+                                        value={search}
+                                        onChange={(e) => {
+                                            setSearch(e.target.value);
+                                            setCurrentPage(1);
+                                        }}
+                                        className="pl-9 pr-4 py-1.5 bg-slate-100/50 border border-transparent rounded-lg text-xs font-bold focus:bg-white focus:border-indigo-100 focus:ring-4 focus:ring-indigo-500/5 outline-none w-32 md:w-48 transition-all"
+                                    />
+                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within/search:text-indigo-500 transition-colors">
+                                        <SearchIcon />
+                                    </div>
+                                </div>
+                                <span className="text-[10px] font-black text-slate-400 italic">本日: {totalLogs}</span>
+                                <div className="flex gap-0.5">
+                                    <button
+                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        disabled={currentPage === 1}
+                                        className="p-1 hover:bg-slate-100 rounded-lg disabled:opacity-30 transition-colors"
+                                    >
+                                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
+                                    </button>
+                                    <span className="flex items-center justify-center text-[10px] font-black w-6 h-6 bg-indigo-50 text-indigo-600 rounded-lg">{currentPage}</span>
+                                    <button
+                                        onClick={() => setCurrentPage(p => p + 1)}
+                                        disabled={currentPage * 10 >= totalLogs}
+                                        className="p-1 hover:bg-slate-100 rounded-lg disabled:opacity-30 transition-colors"
+                                    >
+                                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                        <span className="text-xs font-bold text-slate-400 italic">本日合計: {totalLogs}</span>
-                        <div className="flex gap-1">
-                            <button
-                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                disabled={currentPage === 1}
-                                className="p-1 hover:bg-slate-100 rounded-lg disabled:opacity-30 transition-colors"
-                            >
-                                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
-                            </button>
-                            <span className="flex items-center justify-center text-sm font-black w-10 h-8 bg-indigo-50 text-indigo-600 rounded-lg">{currentPage}</span>
-                            <button
-                                onClick={() => setCurrentPage(p => p + 1)}
-                                disabled={currentPage * 10 >= totalLogs}
-                                className="p-1 hover:bg-slate-100 rounded-lg disabled:opacity-30 transition-colors"
-                            >
-                                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
-                            </button>
-                        </div>
-                    </div>
+                    )}
                 </div>
 
                 <div className="overflow-x-auto">
@@ -317,12 +375,14 @@ export const Dashboard: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {mainLogs.length === 0 ? (
+                            {(isViewer ? personalHistory : mainLogs).length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-8 py-16 text-center text-slate-400 italic font-medium tracking-tight">本日の打刻ログはまだありません。</td>
+                                    <td colSpan={5} className="px-8 py-16 text-center text-slate-400 italic font-medium tracking-tight">
+                                        {isViewer ? '打刻履歴はありません。' : '本日の打刻ログはまだありません。'}
+                                    </td>
                                 </tr>
                             ) : (
-                                mainLogs.map((record: AttendanceRecord) => {
+                                (isViewer ? personalHistory : mainLogs).map((record: AttendanceRecord) => {
                                     const st = record.status;
                                     const isCritical = st.includes('異常') || st.includes('遅刻') || st.includes('早退') || st.includes('欠勤');
                                     const isNormal = st.includes('通常') && !st.startsWith('未出勤');
@@ -334,9 +394,9 @@ export const Dashboard: React.FC = () => {
                                             <td className="px-8 py-5">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-[10px] font-black uppercase">
-                                                        {record.employeeName.charAt(0)}
+                                                        {(record.employeeName || user?.username || '').charAt(0)}
                                                     </div>
-                                                    <span className="text-sm font-bold text-slate-900 tracking-tight">{record.employeeName}</span>
+                                                    <span className="text-sm font-bold text-slate-900 tracking-tight">{record.employeeName || user?.username}</span>
                                                 </div>
                                             </td>
                                             <td className="px-8 py-5">
@@ -352,7 +412,7 @@ export const Dashboard: React.FC = () => {
                                                 </span>
                                             </td>
                                             <td className="px-8 py-5 text-sm text-slate-500 font-black font-mono">
-                                                {record.recordTime ? new Date(record.recordTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '---'}
+                                                {record.recordTime ? new Date(record.recordTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' }) : '---'}
                                             </td>
                                             <td className="px-8 py-5 text-right">
                                                 <Link to={`/attendance/history/${record.employeeId}`} className="text-indigo-600 hover:text-indigo-900 text-[10px] font-black transition-opacity opacity-0 group-hover:opacity-100 uppercase tracking-tighter">
@@ -367,12 +427,14 @@ export const Dashboard: React.FC = () => {
                     </table>
                 </div>
 
-                <div className="px-8 py-4 bg-slate-50/50 border-t border-slate-200/60 text-right">
-                    <Link to="/attendance/list" className="inline-flex items-center text-indigo-600 font-bold hover:text-indigo-800 transition-colors gap-2 text-xs uppercase tracking-widest">
-                        全ての詳細データ・リストへ
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-                    </Link>
-                </div>
+                {!isViewer && (
+                    <div className="px-8 py-4 bg-slate-50/50 border-t border-slate-200/60 text-right">
+                        <Link to="/attendance/list" className="inline-flex items-center text-indigo-600 font-bold hover:text-indigo-800 transition-colors gap-2 text-xs uppercase tracking-widest">
+                            全ての詳細データ・リストへ
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                        </Link>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -441,6 +503,12 @@ const BoltIcon = () => (
 );
 const SearchIcon = () => (
     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+);
+const ArrowPathIcon = () => (
+    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+);
+const DocumentArrowDownIcon = () => (
+    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
 );
 
 export default Dashboard;

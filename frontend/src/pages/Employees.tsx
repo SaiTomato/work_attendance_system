@@ -1,12 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { fetchEmployees, updateEmployee, createEmployee, deleteEmployee } from '../services/employee.api';
+import { fetchEmployees, updateEmployee, createEmployee, deleteEmployee, downloadEmployeesCsv } from '../services/employee.api';
 import { fetchDepartments, Department } from '../services/department.api';
 import { EmployeeProfile, EmployeeStatus, Position } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import Pagination from '../components/common/Pagination';
 
 // Skill: frontend-admin-view
 export const Employees: React.FC = () => {
     const [employees, setEmployees] = useState<EmployeeProfile[]>([]);
+    const [totalItems, setTotalItems] = useState(0);
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 10;
+
+    const [sortField, setSortField] = useState<string>('employeeId');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
     const [departments, setDepartments] = useState<Department[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -16,14 +24,23 @@ export const Employees: React.FC = () => {
     const { user } = useAuth();
     const isAdminOrHR = user?.role === 'admin' || user?.role === 'hr';
 
-    const loadData = async () => {
+    const loadData = async (page: number = currentPage, sortF: string = sortField, sortO: 'asc' | 'desc' = sortOrder) => {
         try {
             setLoading(true);
             const [empRes, deptRes] = await Promise.all([
-                fetchEmployees({ search: searchTerm }),
+                fetchEmployees({
+                    search: searchTerm,
+                    page,
+                    limit: itemsPerPage,
+                    sortField: sortF,
+                    sortOrder: sortO
+                }),
                 fetchDepartments()
             ]);
-            if (empRes.success && empRes.data) setEmployees(empRes.data);
+            if (empRes.success && empRes.data) {
+                setEmployees(empRes.data.employees);
+                setTotalItems(empRes.data.total);
+            }
             if (deptRes.success && deptRes.data) setDepartments(deptRes.data);
         } catch (error) {
             console.error('Failed to load employee data:', error);
@@ -33,8 +50,23 @@ export const Employees: React.FC = () => {
     };
 
     useEffect(() => {
-        loadData();
+        loadData(1);
+        setCurrentPage(1);
     }, [searchTerm]);
+
+    useEffect(() => {
+        loadData();
+    }, [currentPage, sortField, sortOrder]);
+
+    const handleSort = (field: string) => {
+        if (sortField === field) {
+            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortField(field);
+            setSortOrder('asc');
+        }
+        setCurrentPage(1);
+    };
 
     const handleDelete = async (id: string, name: string) => {
         if (!window.confirm(`従業員 [${name}] を削除してもよろしいですか？\n削除後、この従業員はシステムにログインできなくなりますが、過去の考勤記録は保持されます。`)) {
@@ -101,40 +133,104 @@ export const Employees: React.FC = () => {
                     <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">従業員情報センター</h1>
                     <p className="text-slate-500 mt-1 uppercase text-xs tracking-widest font-bold">Employee Intelligence OS</p>
                 </div>
-                {isAdminOrHR && (
+                <div className="flex items-center gap-3">
                     <button
-                        onClick={() => setIsAddModalOpen(true)}
-                        className="btn-premium btn-primary px-6"
+                        onClick={() => loadData()}
+                        className="px-3 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center gap-1.5"
                     >
-                        + 従業員登録
+                        <ArrowPathIcon />
+                        データ更新
                     </button>
-                )}
+                    {isAdminOrHR && (
+                        <button
+                            onClick={() => setIsAddModalOpen(true)}
+                            className="btn-premium btn-primary px-6 py-2.5 text-sm font-bold shadow-lg shadow-indigo-200"
+                        >
+                            + 従業員登録
+                        </button>
+                    )}
+                </div>
             </header>
 
-            <div className="glass-card p-4 flex gap-4">
-                <div className="relative flex-1">
-                    <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                    </span>
-                    <input
-                        type="text"
-                        placeholder="氏名 または 社員IDで検索..."
-                        className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                </div>
-            </div>
-
             <div className="glass-card overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-200/60 flex items-center justify-between bg-white/50">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-indigo-50">
+                            <UsersIcon />
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-900 uppercase tracking-tight">登録メンバー</h3>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <div className="relative group/search">
+                            <input
+                                type="text"
+                                placeholder="氏名・ID・部署・役職など..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-9 pr-4 py-1.5 bg-slate-100/50 border border-transparent rounded-lg text-xs font-bold focus:bg-white focus:border-indigo-100 focus:ring-4 focus:ring-indigo-500/5 outline-none w-40 md:w-64 transition-all"
+                            />
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within/search:text-indigo-500 transition-colors">
+                                <SearchIcon />
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => downloadEmployeesCsv({ search: searchTerm })}
+                            className="p-2 bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-indigo-600 rounded-lg transition-all"
+                            title="CSVエクスポート"
+                        >
+                            <DocumentArrowDownIcon />
+                        </button>
+                        <span className="text-[10px] font-black text-slate-400 italic">総数: {totalItems}</span>
+                    </div>
+                </div>
                 <table className="min-w-full">
                     <thead>
                         <tr className="bg-slate-50/50">
-                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">社員ID</th>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">氏名 / 状態</th>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">役職 / 部署</th>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">勤務地</th>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">ステータス</th>
+                            <th
+                                className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors"
+                                onClick={() => handleSort('employeeId')}
+                            >
+                                <div className="flex items-center gap-1">
+                                    社員ID
+                                    {sortField === 'employeeId' && (sortOrder === 'asc' ? <ArrowUpIcon /> : <ArrowDownIcon />)}
+                                </div>
+                            </th>
+                            <th
+                                className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors"
+                                onClick={() => handleSort('name')}
+                            >
+                                <div className="flex items-center gap-1">
+                                    氏名 / 状態
+                                    {sortField === 'name' && (sortOrder === 'asc' ? <ArrowUpIcon /> : <ArrowDownIcon />)}
+                                </div>
+                            </th>
+                            <th
+                                className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors"
+                                onClick={() => handleSort('position')}
+                            >
+                                <div className="flex items-center gap-1">
+                                    役職 / 部署
+                                    {sortField === 'position' && (sortOrder === 'asc' ? <ArrowUpIcon /> : <ArrowDownIcon />)}
+                                </div>
+                            </th>
+                            <th
+                                className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors"
+                                onClick={() => handleSort('workLocation')}
+                            >
+                                <div className="flex items-center gap-1">
+                                    勤務地
+                                    {sortField === 'workLocation' && (sortOrder === 'asc' ? <ArrowUpIcon /> : <ArrowDownIcon />)}
+                                </div>
+                            </th>
+                            <th
+                                className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors"
+                                onClick={() => handleSort('status')}
+                            >
+                                <div className="flex items-center gap-1">
+                                    ステータス
+                                    {sortField === 'status' && (sortOrder === 'asc' ? <ArrowUpIcon /> : <ArrowDownIcon />)}
+                                </div>
+                            </th>
                             <th className="px-6 py-4 text-right text-xs font-bold text-slate-400 uppercase tracking-widest">操作</th>
                         </tr>
                     </thead>
@@ -170,12 +266,14 @@ export const Employees: React.FC = () => {
                                     <td className="px-6 py-4">{getStatusBadge(emp.status)}</td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex justify-end gap-2">
-                                            <button
-                                                onClick={() => setEditingEmployee(emp)}
-                                                className="text-indigo-600 hover:text-indigo-900 font-bold text-xs bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors"
-                                            >
-                                                編集
-                                            </button>
+                                            {isAdminOrHR && (
+                                                <button
+                                                    onClick={() => setEditingEmployee(emp)}
+                                                    className="text-indigo-600 hover:text-indigo-900 font-bold text-xs bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors"
+                                                >
+                                                    編集
+                                                </button>
+                                            )}
                                             {isAdminOrHR && (
                                                 <button
                                                     onClick={() => handleDelete(emp.id, emp.name)}
@@ -192,6 +290,12 @@ export const Employees: React.FC = () => {
                         )}
                     </tbody>
                 </table>
+                <Pagination
+                    currentPage={currentPage}
+                    totalItems={totalItems}
+                    itemsPerPage={itemsPerPage}
+                    onPageChange={setCurrentPage}
+                />
             </div>
 
             {editingEmployee && (
@@ -390,5 +494,25 @@ const EmployeeEditForm = ({ employee, departments, onClose, onSaved }: any) => {
         </div>
     );
 };
+
+const UsersIcon = () => (
+    <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+);
+const SearchIcon = () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+);
+const ArrowPathIcon = () => (
+    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+);
+const ArrowUpIcon = () => (
+    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" /></svg>
+);
+const ArrowDownIcon = () => (
+    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+);
+
+const DocumentArrowDownIcon = () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+);
 
 export default Employees;

@@ -4,9 +4,24 @@ import { attendanceAudit } from './attendance.audit';
 import prisma from '../../db';
 
 export class AttendanceService {
-    async getDailyRecords(dateStr?: string, filter?: string) {
-        const date = dateStr ? new Date(dateStr) : new Date();
-        return await attendanceRepo.getDailyRecords(date, filter);
+    async getDailyRecords(
+        mode: 'snapshot' | 'log',
+        startDateStr?: string,
+        endDateStr?: string,
+        filter?: string,
+        search?: string,
+        page: number = 1,
+        limit: number = 10,
+        sortField: string = 'recordTime',
+        sortOrder: 'asc' | 'desc' = 'desc'
+    ) {
+        const start = startDateStr ? new Date(startDateStr) : undefined;
+        const end = endDateStr ? new Date(endDateStr) : undefined;
+        return await attendanceRepo.getDailyRecords(mode, start, end, filter, search, page, limit, sortField, sortOrder);
+    }
+
+    async getEmployeeHistory(employeeId: string, page: number = 1, limit: number = 10) {
+        return await attendanceRepo.getEmployeeHistory(employeeId, page, limit);
     }
 
     async getAllLogsToday(page: number = 1, limit: number = 10, search?: string) {
@@ -18,9 +33,6 @@ export class AttendanceService {
         return await attendanceRepo.getDailyStats(today);
     }
 
-    async getEmployeeHistory(employeeId: string) {
-        return await attendanceRepo.getEmployeeHistory(employeeId);
-    }
 
     async getAuditLogs(targetId: string) {
         return await attendanceAudit.getLogsByTargetId(targetId);
@@ -333,6 +345,55 @@ export class AttendanceService {
                 recorder: 'SYSTEM_LEAVE_SYNC',
                 reason: `休暇承認による同期: ${leave.reason || ''}`
             });
+        }
+    }
+
+    /**
+     * 従業員の最新プロファイル（勤務地や就業状態）を本日の勤怠レコードに同期
+     */
+    async syncProfileToAttendance(employeeId: string) {
+        const emp = await prisma.employee.findUnique({
+            where: { employeeId },
+            include: { department: true }
+        });
+        if (!emp || emp.deletedAt) return;
+
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+        // 1. 本日の最新レコードを取得
+        const latest = await attendanceRepo.getLatestRecordToday(employeeId);
+
+        // 2. もし既に「出勤」「退勤」などの能動的な記録がある場合は、自動同期をスキップ（手動操作を優先）
+        if (latest && (latest.status.startsWith('出勤') || latest.status.startsWith('退勤'))) {
+            console.log(`[AttendanceService] Skip sync for ${employeeId}: Active punch detected.`);
+            return;
+        }
+
+        // 3. プロファイルに基づきターゲットステータスを決定
+        let targetStatus = '未出勤-通常';
+        if (emp.dutyStatus === 'PAID_LEAVE') {
+            targetStatus = '休暇-有給';
+        } else if (emp.dutyStatus === 'UNPAID_LEAVE') {
+            targetStatus = '休暇-無給';
+        } else if (emp.workLocation === 'REMOTE') {
+            targetStatus = '外出-リモート';
+        } else if (emp.workLocation === 'WORKSITE') {
+            targetStatus = '外出-現場';
+        } else {
+            targetStatus = '未出勤-通常';
+        }
+
+        // 4. 現在のステータスと異なる場合のみ記録を追加
+        if (!latest || latest.status !== targetStatus) {
+            await attendanceRepo.createAttendance({
+                employeeId,
+                status: targetStatus,
+                recorder: 'SYSTEM_PROFILE_SYNC',
+                reason: '従業員プロファイルの変更（勤務地/就業状態）に伴う自動同期'
+            });
+            console.log(`[AttendanceService] Synced profile to attendance for ${employeeId}: -> ${targetStatus}`);
         }
     }
 

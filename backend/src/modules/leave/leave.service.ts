@@ -47,16 +47,84 @@ export const leaveService = {
     },
 
     /**
-     * 管理员获取所有已处理（批准/驳回）的历史记录
+     * 管理员获取所有已处理（批准/驳回）的历史记录 - ページネーション・ソート対応
      */
-    async getAllProcessedRequests() {
-        return await prisma.leaveRequest.findMany({
-            where: {
-                status: { in: [ApprovalStatus.APPROVED, ApprovalStatus.REJECTED] }
-            },
+    async getAllProcessedRequests(filters?: {
+        search?: string;
+        page?: number;
+        limit?: number;
+        sortField?: string;
+        sortOrder?: 'asc' | 'desc';
+    }) {
+        const page = filters?.page || 1;
+        const limit = filters?.limit || 10;
+        const sortField = filters?.sortField || 'updatedAt';
+        const sortOrder = filters?.sortOrder || 'desc';
+
+        const where: any = {
+            status: { in: [ApprovalStatus.APPROVED, ApprovalStatus.REJECTED] }
+        };
+
+        if (filters?.search) {
+            where.OR = [
+                { employee: { name: { contains: filters.search, mode: 'insensitive' } } },
+                { employee: { employeeId: { contains: filters.search, mode: 'insensitive' } } },
+                { reason: { contains: filters.search, mode: 'insensitive' } }
+            ];
+        }
+
+        const total = await prisma.leaveRequest.count({ where });
+
+        // ソート設定
+        const orderBy: any = {};
+        if (sortField === 'employeeName') {
+            orderBy.employee = { name: sortOrder };
+        } else {
+            orderBy[sortField] = sortOrder;
+        }
+
+        const requests = await prisma.leaveRequest.findMany({
+            where,
             include: { employee: true },
-            orderBy: { updatedAt: 'desc' }
+            orderBy,
+            skip: (page - 1) * limit,
+            take: limit
         });
+
+        return { requests, total };
+    },
+
+    /**
+     * 导出休暇申请/历史记录为 CSV
+     */
+    async exportLeavesCsv(filters?: { search?: string }) {
+        // エクスポート時は全件取得するため大きなリミットを指定
+        const { requests } = await this.getAllProcessedRequests({ ...filters, page: 1, limit: 10000 });
+
+        const header = ['申請者ID', '氏名', 'タイプ', '開始日', '終了日', '理由', 'ステータス', '承認者'];
+        const rows = requests.map((l: any) => [
+            l.employee.employeeId,
+            l.employee.name,
+            l.type === 'PAID' ? '有給' : '無給',
+            l.startDate.toISOString().split('T')[0],
+            l.endDate.toISOString().split('T')[0],
+            (l.reason || '').replace(/\n/g, ' '),
+            l.status === 'APPROVED' ? '承認済' : '却下済',
+            l.approvedBy || '-'
+        ]);
+
+        const csvContent = [
+            "\ufeff" + header.join(','),
+            ...rows.map((row: any[]) => row.map((cell: any) => {
+                const str = String(cell || '');
+                return `"${str.replace(/"/g, '""')}"`;
+            }).join(','))
+        ].join('\n');
+
+        return {
+            filename: `休暇申請履歴_${new Date().toISOString().split('T')[0]}.csv`,
+            content: csvContent
+        };
     },
 
     /**

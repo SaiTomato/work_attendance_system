@@ -145,13 +145,21 @@ router.get('/dashboard/stats', requireRole(['admin', 'manager', 'hr']), async (r
     }
 });
 
-// 7. 詳細記録リスト
+// 7. 詳細記録リスト (ページネーション対応)
 router.get('/list', requireRole(['admin', 'manager', 'hr']), async (req: Request, res: Response) => {
     try {
-        const date = req.query.date as string;
+        const mode = (req.query.mode as 'snapshot' | 'log') || 'snapshot';
+        const startDate = req.query.startDate as string;
+        const endDate = req.query.endDate as string;
         const filter = req.query.filter as string;
-        const list = await attendanceService.getDailyRecords(date, filter);
-        successResponse(res, list);
+        const search = req.query.search as string;
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 10;
+        const sortField = (req.query.sortField as string) || 'recordTime';
+        const sortOrder = (req.query.sortOrder as 'asc' | 'desc') || 'desc';
+
+        const result = await attendanceService.getDailyRecords(mode, startDate, endDate, filter, search, page, limit, sortField, sortOrder);
+        successResponse(res, result);
     } catch (error: any) {
         errorResponse(res, error.message);
     }
@@ -190,10 +198,13 @@ router.post('/auto-checkout', requireRole(['admin']), async (req: Request, res: 
     }
 });
 
-// 9. 個人履歴
+// 9. 個人履歴 (ページネーション対応)
 router.get('/history/:employeeId', async (req: Request, res: Response) => {
     try {
         const targetEmployeeId = req.params.employeeId;
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 10;
+
         if (req.user?.role === 'viewer') {
             const user = await prisma.user.findUnique({
                 where: { id: req.user.id },
@@ -203,8 +214,8 @@ router.get('/history/:employeeId', async (req: Request, res: Response) => {
                 return errorResponse(res, '権限が不足しています', 403);
             }
         }
-        const history = await attendanceService.getEmployeeHistory(targetEmployeeId);
-        successResponse(res, history);
+        const result = await attendanceService.getEmployeeHistory(targetEmployeeId, page, limit);
+        successResponse(res, result);
     } catch (error: any) {
         errorResponse(res, error.message);
     }

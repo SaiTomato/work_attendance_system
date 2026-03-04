@@ -14,8 +14,6 @@ const Login: React.FC = () => {
         if (isAuthenticated && user) {
             if (user.role === 'terminal') {
                 navigate('/scanner');
-            } else if (user.role === 'viewer') {
-                navigate('/punch-qr');
             } else {
                 navigate('/');
             }
@@ -31,8 +29,6 @@ const Login: React.FC = () => {
             const loggedInUser = await login(username, password);
             if (loggedInUser.user.role === 'terminal') {
                 navigate('/scanner');
-            } else if (loggedInUser.user.role === 'viewer') {
-                navigate('/punch-qr');
             } else {
                 navigate('/');
             }

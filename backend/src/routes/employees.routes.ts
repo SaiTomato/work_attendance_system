@@ -7,16 +7,37 @@ const router = Router();
 // 所有员工管理功能均需认证
 router.use(authenticate);
 
-// 1. 获取员工列表 (Admin/HR/Manager 可看)
+// 1. 获取员工列表 (Admin/HR/Manager 可看 - ページネーション・ソート対応)
 router.get('/', requireRole(['admin', 'hr', 'manager']), async (req, res) => {
+    try {
+        const filters = {
+            departmentId: req.query.departmentId as string,
+            status: req.query.status as string,
+            search: req.query.search as string,
+            page: parseInt(req.query.page as string) || 1,
+            limit: parseInt(req.query.limit as string) || 10,
+            sortField: req.query.sortField as string,
+            sortOrder: req.query.sortOrder as 'asc' | 'desc'
+        };
+        const result = await employeeService.listEmployees(filters);
+        res.json({ success: true, data: result });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// 1.5. 导出员工 CSV
+router.get('/export', requireRole(['admin', 'hr', 'manager']), async (req, res) => {
     try {
         const filters = {
             departmentId: req.query.departmentId as string,
             status: req.query.status as string,
             search: req.query.search as string
         };
-        const list = await employeeService.listEmployees(filters);
-        res.json({ success: true, data: list });
+        const { filename, content } = await employeeService.exportEmployeesCsv(filters);
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename=${encodeURI(filename)}`);
+        res.status(200).send(content);
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }

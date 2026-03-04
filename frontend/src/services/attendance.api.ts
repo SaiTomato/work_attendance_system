@@ -10,11 +10,21 @@ export const fetchDashboardStats = async (): Promise<ApiResponse<DailyStats>> =>
 };
 
 /**
- * 勤怠一覧の取得 (フィルター対応)
+ * 勤怠一覧の取得 (モード・フィルター・期間・検索・ページネーション対応)
  */
-export const fetchAttendanceList = async (date?: string, filter?: string): Promise<ApiResponse<AttendanceRecord[]>> => {
+export const fetchAttendanceList = async (
+    mode: 'snapshot' | 'log',
+    startDate?: string,
+    endDate?: string,
+    filter?: string,
+    search?: string,
+    page: number = 1,
+    limit: number = 10,
+    sortField?: string,
+    sortOrder?: 'asc' | 'desc'
+): Promise<ApiResponse<{ records: AttendanceRecord[], total: number }>> => {
     const res = await api.get('/attendance/list', {
-        params: { date, filter }
+        params: { mode, startDate, endDate, filter, search, page, limit, sortField, sortOrder }
     });
     return res.data;
 };
@@ -30,10 +40,12 @@ export const fetchDailyLogsToday = async (page: number = 1, limit: number = 10, 
 };
 
 /**
- * 特定従業員の履歴データの取得
+ * 特定従業員の履歴データの取得 (ページネーション対応)
  */
-export const fetchEmployeeHistory = async (employeeId: string): Promise<ApiResponse<AttendanceRecord[]>> => {
-    const res = await api.get(`/attendance/history/${employeeId}`);
+export const fetchEmployeeHistory = async (employeeId: string, page: number = 1, limit: number = 10): Promise<ApiResponse<{ records: AttendanceRecord[], total: number }>> => {
+    const res = await api.get(`/attendance/history/${employeeId}`, {
+        params: { page, limit }
+    });
     return res.data;
 };
 

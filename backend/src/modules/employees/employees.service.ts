@@ -1,11 +1,25 @@
 import prisma from '../../db';
 import { EmployeeStatus, Position, WorkLocation } from '@prisma/client';
+import { attendanceService } from '../attendance/attendance.service';
 
 export class EmployeeService {
     /**
-     * 従業員一覧を取得。部署、ステータス、検索キーワードによるフィルタリングに対応
+     * 従業員一覧を取得。部署、ステータス、検索キーワードによるフィルタリングに対応 - ページネーション・ソート対応
      */
-    async listEmployees(filters: { departmentId?: string; status?: string; search?: string }) {
+    async listEmployees(filters: {
+        departmentId?: string;
+        status?: string;
+        search?: string;
+        page?: number;
+        limit?: number;
+        sortField?: string;
+        sortOrder?: 'asc' | 'desc';
+    }) {
+        const page = filters.page || 1;
+        const limit = filters.limit || 10;
+        const sortField = filters.sortField || 'employeeId';
+        const sortOrder = filters.sortOrder || 'asc';
+
         const where: any = { deletedAt: null };
 
         if (filters.departmentId && filters.departmentId !== '') {
@@ -17,20 +31,96 @@ export class EmployeeService {
         }
 
         if (filters.search && filters.search !== '') {
+            const search = filters.search.toUpperCase();
+            const searchLower = filters.search.toLowerCase();
+
+            // Enumへのマッピング試行 (英語 & 日本語 & 中国語)
+            const statusMatch = ['PROSPECTIVE', 'ACTIVE', 'RESIGNED'].find(s => s === search) ||
+                (search === '内定' || search === '内定者' ? 'PROSPECTIVE' :
+                    search === '在職' || search === '在职' ? 'ACTIVE' :
+                        search === '退職' || search === '离职' ? 'RESIGNED' : undefined);
+
+            const locationMatch = ['OFFICE', 'REMOTE', 'WORKSITE'].find(l => l === search) ||
+                (search === 'オフィス' ? 'OFFICE' :
+                    search === 'リモート' ? 'REMOTE' :
+                        search === '現場' ? 'WORKSITE' : undefined);
+
+            const positionMatch = ['STAFF', 'SUB_MANAGER', 'MANAGER', 'GENERAL_AFFAIRS', 'CEO'].find(p => p === search) ||
+                (searchLower.includes('社員') || searchLower.includes('员工') ? 'STAFF' :
+                    searchLower.includes('係長') || searchLower.includes('主任') ? 'SUB_MANAGER' :
+                        searchLower.includes('部長') || searchLower.includes('经理') ? 'MANAGER' :
+                            searchLower.includes('総務') || searchLower.includes('人事') ? 'GENERAL_AFFAIRS' :
+                                searchLower.includes('代表') || searchLower.includes('社長') || searchLower.includes('总裁') ? 'CEO' : undefined);
+
             where.OR = [
                 { name: { contains: filters.search, mode: 'insensitive' } },
-                { employeeId: { contains: filters.search, mode: 'insensitive' } }
+                { employeeId: { contains: filters.search, mode: 'insensitive' } },
+                { email: { contains: filters.search, mode: 'insensitive' } },
+                { department: { name: { contains: filters.search, mode: 'insensitive' } } }
             ];
+
+            if (statusMatch) where.OR.push({ status: statusMatch });
+            if (locationMatch) where.OR.push({ workLocation: locationMatch });
+            if (positionMatch) where.OR.push({ position: positionMatch });
         }
 
-        return await prisma.employee.findMany({
+        const total = await prisma.employee.count({ where });
+
+        // ソート設定
+        const orderBy: any = {};
+        if (sortField === 'departmentName') {
+            orderBy.department = { name: sortOrder };
+        } else {
+            orderBy[sortField] = sortOrder;
+        }
+
+        const employees = await prisma.employee.findMany({
             where,
             include: {
                 department: { select: { name: true, code: true } },
                 user: { select: { username: true, role: true } }
             },
-            orderBy: { employeeId: 'asc' }
+            orderBy,
+            skip: (page - 1) * limit,
+            take: limit
         });
+
+        return { employees, total };
+    }
+
+    /**
+     * 従業員データをCSV形式で出力
+     */
+    async exportEmployeesCsv(filters: { departmentId?: string; status?: string; search?: string }) {
+        // エクスポート時は全件取得するため大きなリミットを指定
+        const { employees } = await this.listEmployees({ ...filters, page: 1, limit: 10000 });
+
+        const header = ['社員ID', '氏名', '性別', '年齢', 'メール', '部署', '役職', '状態', '勤務地', '入社日'];
+        const rows = employees.map((e: any) => [
+            e.employeeId,
+            e.name,
+            e.gender === 'MALE' ? '男' : e.gender === 'FEMALE' ? '女' : '他',
+            e.age,
+            e.email,
+            e.department?.name || '-',
+            e.position,
+            e.status,
+            e.workLocation,
+            e.hireDate ? (e.hireDate as Date).toISOString().split('T')[0] : '-'
+        ]);
+
+        const csvContent = [
+            "\ufeff" + header.join(','), // BOM for Japanese Excel
+            ...rows.map((row: any[]) => row.map((cell: any) => {
+                const str = String(cell || '');
+                return `"${str.replace(/"/g, '""')}"`;
+            }).join(','))
+        ].join('\n');
+
+        return {
+            filename: `従業員データ_${new Date().toISOString().split('T')[0]}.csv`,
+            content: csvContent
+        };
     }
 
     /**
@@ -94,6 +184,9 @@ export class EmployeeService {
             } catch (e) {
                 console.warn('[EmployeeService] Audit log creation failed:', e);
             }
+
+            // 4. 初回の勤怠ステータスを同期 (本日分があれば)
+            await attendanceService.syncProfileToAttendance(newEmp.employeeId);
 
             return newEmp;
         });
@@ -171,6 +264,9 @@ export class EmployeeService {
             } catch (e) {
                 console.warn('[EmployeeService] Audit log update failed:', e);
             }
+
+            // 5. 勤怠ステータスの自動同期 (勤務地や就業状態の変更を即座に反映)
+            await attendanceService.syncProfileToAttendance(updated.employeeId);
 
             return updated;
         });

@@ -16,7 +16,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode, allowedRoles?: strin
     if (allowedRoles && user && !allowedRoles.includes(user.role)) {
         // ロールが不一致の場合、それぞれの専用ページへリダイレクト
         if (user.role === 'terminal') return <Navigate to="/scanner" replace />;
-        if (user.role === 'viewer') return <Navigate to="/punch-qr" replace />;
+        // viewer は Dashboard (/) をホームにするためリダイレクト不要
         return <Navigate to="/" replace />;
     }
     return <>{children}</>;
@@ -84,11 +84,11 @@ const Header = () => {
                     </button>
 
                     <nav className="hidden md:flex items-center gap-8">
+                        {(['admin', 'manager', 'hr', 'viewer'].includes(user?.role || '')) && (
+                            <Link to="/" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">ホームページ</Link>
+                        )}
                         {['admin', 'manager', 'hr'].includes(user?.role || '') && (
-                            <>
-                                <Link to="/" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">ホームページ</Link>
-                                <Link to="/attendance/list" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">状態リスト</Link>
-                            </>
+                            <Link to="/attendance/list" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">状態リスト</Link>
                         )}
                         {user?.role !== 'terminal' && (
                             <Link to="/leave" className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors relative">
@@ -100,7 +100,7 @@ const Header = () => {
                                 )}
                             </Link>
                         )}
-                        {(user?.role === 'admin' || user?.role === 'hr') && (
+                        {['admin', 'hr', 'manager'].includes(user?.role || '') && (
                             <Link to="/employees" className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors border-l border-slate-200 pl-8">社員情報管理</Link>
                         )}
                         {/* ターミナルと管理者の場合に Terminal Mode を表示 */}
@@ -130,11 +130,11 @@ const Header = () => {
             {isMenuOpen && (
                 <div className="md:hidden border-t border-slate-100 bg-white animate-in slide-in-from-top duration-300">
                     <div className="px-4 py-6 space-y-4">
+                        {(['admin', 'manager', 'hr', 'viewer'].includes(user?.role || '')) && (
+                            <Link to="/" onClick={() => setIsMenuOpen(false)} className="block px-4 py-3 text-base font-bold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">ホームページ</Link>
+                        )}
                         {['admin', 'manager', 'hr'].includes(user?.role || '') && (
-                            <>
-                                <Link to="/" onClick={() => setIsMenuOpen(false)} className="block px-4 py-3 text-base font-bold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">ホームページ</Link>
-                                <Link to="/attendance/list" onClick={() => setIsMenuOpen(false)} className="block px-4 py-3 text-base font-bold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">状態リスト</Link>
-                            </>
+                            <Link to="/attendance/list" onClick={() => setIsMenuOpen(false)} className="block px-4 py-3 text-base font-bold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">状態リスト</Link>
                         )}
                         {user?.role !== 'terminal' && (
                             <Link to="/leave" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-4 py-3 text-base font-bold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">
@@ -146,7 +146,7 @@ const Header = () => {
                                 )}
                             </Link>
                         )}
-                        {(user?.role === 'admin' || user?.role === 'hr') && (
+                        {['admin', 'hr', 'manager'].includes(user?.role || '') && (
                             <Link to="/employees" onClick={() => setIsMenuOpen(false)} className="block px-4 py-3 text-base font-bold text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors">社員情報管理</Link>
                         )}
                         <div className="pt-4 border-t border-slate-50 flex items-center justify-between px-4">
@@ -193,7 +193,7 @@ const AppContent: React.FC = () => {
                         <Route path="/punch-qr" element={<ProtectedRoute><PunchQR /></ProtectedRoute>} />
 
                         <Route path="/" element={
-                            <ProtectedRoute allowedRoles={['admin', 'manager', 'hr']}>
+                            <ProtectedRoute allowedRoles={['admin', 'manager', 'hr', 'viewer']}>
                                 <Dashboard />
                             </ProtectedRoute>
                         } />
@@ -205,7 +205,7 @@ const AppContent: React.FC = () => {
                         } />
 
                         <Route path="/attendance/history/:id" element={
-                            <ProtectedRoute allowedRoles={['admin', 'manager', 'hr']}>
+                            <ProtectedRoute allowedRoles={['admin', 'manager', 'hr', 'viewer']}>
                                 <EmployeeDetail />
                             </ProtectedRoute>
                         } />
@@ -217,7 +217,7 @@ const AppContent: React.FC = () => {
                         } />
 
                         <Route path="/employees" element={
-                            <ProtectedRoute allowedRoles={['admin']}>
+                            <ProtectedRoute allowedRoles={['admin', 'hr', 'manager']}>
                                 <Employees />
                             </ProtectedRoute>
                         } />

@@ -5,6 +5,7 @@ interface AuthUser {
   id: string;
   username: string;
   role: 'admin' | 'manager' | 'hr' | 'viewer' | 'terminal';
+  employeeId: string | null;
 }
 
 interface AuthContextType {

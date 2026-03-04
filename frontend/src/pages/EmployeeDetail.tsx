@@ -2,26 +2,44 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { fetchEmployeeHistory, fetchAuditLogs } from '../services/attendance.api';
 import { AttendanceRecord, AuditLog } from '../types';
+import { useAuth } from '../contexts/AuthContext';
+import Pagination from '../components/common/Pagination';
 
 export const EmployeeDetail: React.FC = () => {
     const { id: employeeId } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const { user } = useAuth();
+    const isViewer = user?.role === 'viewer';
+
     const [history, setHistory] = useState<AttendanceRecord[]>([]);
+    const [totalItems, setTotalItems] = useState(0);
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 10;
+
     const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
     const [logs, setLogs] = useState<AuditLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [showLogs, setShowLogs] = useState(false);
 
-    useEffect(() => {
+    const loadHistory = async () => {
         if (!employeeId) return;
         setLoading(true);
-        fetchEmployeeHistory(employeeId).then(res => {
+        try {
+            const res = await fetchEmployeeHistory(employeeId, currentPage, itemsPerPage);
             if (res.success && res.data) {
-                setHistory(res.data);
+                setHistory(res.data.records);
+                setTotalItems(res.data.total);
             }
+        } catch (err) {
+            console.error(err);
+        } finally {
             setLoading(false);
-        });
-    }, [employeeId]);
+        }
+    };
+
+    useEffect(() => {
+        loadHistory();
+    }, [employeeId, currentPage]);
 
     const handleViewLogs = (record: AttendanceRecord) => {
         setSelectedRecord(record);
@@ -64,7 +82,7 @@ export const EmployeeDetail: React.FC = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
                 {/* Left: History Table */}
-                <div className="lg:col-span-2 glass-card overflow-hidden">
+                <div className={`${isViewer ? 'lg:col-span-3' : 'lg:col-span-2'} glass-card overflow-hidden`}>
                     <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50">
                         <h3 className="font-black text-xs uppercase tracking-[0.2em] text-slate-400">アクティビティ履歴</h3>
                     </div>
@@ -75,7 +93,7 @@ export const EmployeeDetail: React.FC = () => {
                                     <th className="px-8 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">記録日時</th>
                                     <th className="px-8 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">状態</th>
                                     <th className="px-8 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">記録者</th>
-                                    <th className="px-8 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">監査</th>
+                                    {!isViewer && <th className="px-8 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">監査</th>}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -93,86 +111,96 @@ export const EmployeeDetail: React.FC = () => {
                                             <td className="px-8 py-5 text-xs font-bold text-slate-500">
                                                 {record.recorder}
                                             </td>
-                                            <td className="px-8 py-5 text-right">
-                                                <button
-                                                    onClick={() => handleViewLogs(record)}
-                                                    className="text-indigo-600 hover:text-indigo-900 font-black text-[10px] uppercase tracking-tighter transition-all opacity-0 group-hover:opacity-100"
-                                                >
-                                                    詳細を表示 &rarr;
-                                                </button>
-                                            </td>
+                                            {!isViewer && (
+                                                <td className="px-8 py-5 text-right">
+                                                    <button
+                                                        onClick={() => handleViewLogs(record)}
+                                                        className="text-indigo-600 hover:text-indigo-900 font-black text-[10px] uppercase tracking-tighter transition-all opacity-0 group-hover:opacity-100"
+                                                    >
+                                                        詳細を表示 &rarr;
+                                                    </button>
+                                                </td>
+                                            )}
                                         </tr>
                                     ))
                                 )}
                             </tbody>
                         </table>
                     </div>
+                    <Pagination
+                        currentPage={currentPage}
+                        totalItems={totalItems}
+                        itemsPerPage={itemsPerPage}
+                        onPageChange={setCurrentPage}
+                    />
                 </div>
 
                 {/* Right: Audit Log Panel */}
-                <div className="lg:col-span-1 space-y-4">
-                    <div className="glass-card p-8 border-2 border-indigo-50">
-                        <h3 className="text-xl font-black text-slate-900 tracking-tight mb-2">監査トレース</h3>
-                        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-6 border-b border-slate-100 pb-4">監査ログ</p>
+                {!isViewer && (
+                    <div className="lg:col-span-1 space-y-4">
+                        <div className="glass-card p-8 border-2 border-indigo-50">
+                            <h3 className="text-xl font-black text-slate-900 tracking-tight mb-2">監査トレース</h3>
+                            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-6 border-b border-slate-100 pb-4">監査ログ</p>
 
-                        {!showLogs ? (
-                            <div className="py-20 text-center space-y-4">
-                                <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-300">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                            {!showLogs ? (
+                                <div className="py-20 text-center space-y-4">
+                                    <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-300">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                    </div>
+                                    <p className="text-xs text-slate-400 font-bold">左側のレコードを選択して、変更の履歴を確認してください。</p>
                                 </div>
-                                <p className="text-xs text-slate-400 font-bold">左側のレコードを選択して、変更の履歴を確認してください。</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
-                                <div className="bg-indigo-600 p-4 rounded-2xl text-white shadow-xl shadow-indigo-100 mb-8">
-                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-60">選択されたレコード</p>
-                                    <p className="font-bold mt-1 tracking-tight">{selectedRecord?.status}</p>
-                                    <p className="text-[10px] font-mono mt-2 opacity-80">{selectedRecord?.id}</p>
-                                </div>
+                            ) : (
+                                <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
+                                    <div className="bg-indigo-600 p-4 rounded-2xl text-white shadow-xl shadow-indigo-100 mb-8">
+                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-60">選択されたレコード</p>
+                                        <p className="font-bold mt-1 tracking-tight">{selectedRecord?.status}</p>
+                                        <p className="text-[10px] font-mono mt-2 opacity-80">{selectedRecord?.id}</p>
+                                    </div>
 
-                                <div className="space-y-4">
-                                    {logs.length === 0 ? (
-                                        <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-400 font-bold border border-dashed border-slate-200">
-                                            変更履歴はありません。
-                                        </div>
-                                    ) : (
-                                        logs.map(log => (
-                                            <div key={log.id} className="relative pl-6 border-l-2 border-indigo-100 pb-4">
-                                                <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-white border-4 border-indigo-600"></div>
-                                                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded uppercase">{log.action === 'MANUAL_FIX' ? '手動修正' : log.action}</span>
-                                                        <span className="text-[10px] font-mono text-slate-400">{new Date(log.operatedAt).toLocaleTimeString()}</span>
-                                                    </div>
-                                                    <div className="text-xs font-bold text-slate-700">
-                                                        操作者: <span className="text-indigo-600">{log.operatedBy}</span>
-                                                    </div>
-                                                    {log.reason && (
-                                                        <div className="p-2 bg-amber-50 rounded-lg text-amber-700 text-[10px] font-bold italic">
-                                                            "{log.reason}"
+                                    <div className="space-y-4">
+                                        {logs.length === 0 ? (
+                                            <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-400 font-bold border border-dashed border-slate-200">
+                                                変更履歴はありません。
+                                            </div>
+                                        ) : (
+                                            logs.map(log => (
+                                                <div key={log.id} className="relative pl-6 border-l-2 border-indigo-100 pb-4">
+                                                    <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-white border-4 border-indigo-600"></div>
+                                                    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded uppercase">{log.action === 'MANUAL_FIX' ? '手動修正' : log.action}</span>
+                                                            <span className="text-[10px] font-mono text-slate-400">{new Date(log.operatedAt).toLocaleTimeString()}</span>
                                                         </div>
-                                                    )}
-                                                    <div className="space-y-2 pt-2 border-t border-slate-50 mt-2">
-                                                        {log.before && (
-                                                            <div className="text-[9px] text-rose-500 font-mono break-all line-through opacity-50">
-                                                                - {typeof log.before === 'string' ? log.before : JSON.stringify(log.before)}
+                                                        <div className="text-xs font-bold text-slate-700">
+                                                            操作者: <span className="text-indigo-600">{log.operatedBy}</span>
+                                                        </div>
+                                                        {log.reason && (
+                                                            <div className="p-2 bg-amber-50 rounded-lg text-amber-700 text-[10px] font-bold italic">
+                                                                "{log.reason}"
                                                             </div>
                                                         )}
-                                                        {log.after && (
-                                                            <div className="text-[9px] text-emerald-600 font-mono break-all font-bold">
-                                                                + {typeof log.after === 'string' ? log.after : JSON.stringify(log.after)}
-                                                            </div>
-                                                        )}
+                                                        <div className="space-y-2 pt-2 border-t border-slate-50 mt-2">
+                                                            {log.before && (
+                                                                <div className="text-[9px] text-rose-500 font-mono break-all line-through opacity-50">
+                                                                    - {typeof log.before === 'string' ? log.before : JSON.stringify(log.before)}
+                                                                </div>
+                                                            )}
+                                                            {log.after && (
+                                                                <div className="text-[9px] text-emerald-600 font-mono break-all font-bold">
+                                                                    + {typeof log.after === 'string' ? log.after : JSON.stringify(log.after)}
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        ))
-                                    )}
+                                            ))
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
         </div>
     );

@@ -118,12 +118,34 @@ router.get('/pending', requireRole(['admin', 'manager', 'hr']), async (req: Requ
 });
 
 /**
- * 4. 获取全系统已处理的历史记录 (管理层)
+ * 4. 获取全系统已处理的历史记录 (管理层 - ページネーション・ソート対応)
  */
 router.get('/history', requireRole(['admin', 'manager', 'hr']), async (req: Request, res: Response) => {
     try {
-        const list = await leaveService.getAllProcessedRequests();
-        res.json({ success: true, data: list });
+        const filters = {
+            search: req.query.search as string,
+            page: parseInt(req.query.page as string) || 1,
+            limit: parseInt(req.query.limit as string) || 10,
+            sortField: req.query.sortField as string,
+            sortOrder: req.query.sortOrder as 'asc' | 'desc'
+        };
+        const result = await leaveService.getAllProcessedRequests(filters);
+        res.json({ success: true, data: result });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+/**
+ * 4.5 导出处理历史 CSV
+ */
+router.get('/history/export', requireRole(['admin', 'manager', 'hr']), async (req: Request, res: Response) => {
+    try {
+        const search = req.query.search as string;
+        const { filename, content } = await leaveService.exportLeavesCsv({ search });
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename=${encodeURI(filename)}`);
+        res.status(200).send(content);
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }
