@@ -6,59 +6,51 @@
 
 ## 📁 ルートディレクトリ (Root)
 
-- `docker-compose.yml`: プロジェクト全体のDocker構成（Backend, Frontend, DB, pgAdmin）を定義します。
-- `README.md`: プロジェクトの概要と起動方法が記載されています。
-- `reset-db.bat`: データベースをリセットし、初期データを再シードするためのバッチファイルです。
+- `docker-compose.yml`: プロジェクト全体のDocker構成（Backend, Frontend, DB, pgAdmin）を定義。
+- `README.md`: プロジェクトの概要と起動方法。
+- `reset-db.bat`: データベースをリセットし、初期データを再シードするためのバッチファイル。
 
 ---
 
 ## 📂 バックエンド (Backend) - `/backend`
 
-Node.js + Express + Prisma (PostgreSQL) で構築されています。
+Node.js + Express + Prisma (PostgreSQL) で構築。
 
 ### 核心ロジック (Core Logic)
-- `src/services/attendanceEngine.ts`: **プロジェクトの最重要ファイル**。打刻時間の15分単位の取整（切り上げ/切り捨て）、状態判定（出席、遅刻、欠勤、早退）、および実工数の計算ロジックが記述されています。
+- `src/services/attendanceEngine.ts`: 打刻時間の15分単位の取整（切り上げ/切り捨て）、状態判定、工数計算ロジック。
+- `src/modules/employees/employees.service.ts`: 従業員検索ロジック。**中日英語の多言語キーワード対応**（例：「在職」＝「Active」）やEnumマッピングを実装。
 
 ### データベース (Database & ORM)
-- `prisma/schema.prisma`: データベースのテーブル定義（Employee, Attendance, AttendanceRuleなど）を管理します。
-- `prisma/seed.ts`: データベースの初期シードデータを定義します。
-- `src/db/prisma.ts`: Prisma Clientのインスタンス化と接続設定。
+- `prisma/schema.prisma`: テーブル定義（Employee, Attendance, AttendanceRule, LeaveRequestなど）。
+- `prisma/seed.ts`: 初期シードデータ定義。
 
 ### モジュール (Modules) - `src/modules`
-機能ごとにディレクトリが分かれています（例: `attendance`, `employee`）。
-- `attendance.repo.ts`: データベースへの直接的なクエリ操作（取得、統計計算など）を担当します。
-- `attendance.service.ts`: ビジネスロジックの調整役。Engineを呼び出して状態を確定させ、Repoを通じて保存します。
-
-### 通信と設定 (App & Routes)
-- `src/app.ts`: Expressアプリケーションの設定（CORS, Cookie, Middleware）。
-- `src/routes/`: 各機能のAPIエンドポイント定義。
-- `src/types/index.ts`: バックエンド共通のTypeScript型定義（DailyStatsなど）。
+- `attendance.repo.ts`: **ページネーション・ソートの要**。Snapshot（快照）/Log（流水）の2モードを切り替え、手動ソートロジックも内包。
+- `attendance.service.ts`: EngineとRepoの仲介。
+- `leave/leave.service.ts`: 休暇申請のワークフロー（申請・承認・ステータス同期）を管理。
 
 ---
 
 ## 📂 フロントエンド (Frontend) - `/frontend`
 
-React + Vite + TailwindCSS で構築されています。
+React + Vite + TailwindCSS で構築。
 
 ### 画面 (Pages) - `src/pages`
-- `Dashboard.tsx`: 全体統計（出席数、異常数、早退・欠勤など）を統計カードで表示するメイン画面。
-- `AttendanceList.tsx`: 勤怠ログの一覧表示、フィルタリング、および管理責任者による修正・削除画面。
-- `Login.tsx`: 認証画面。
+- `Dashboard.tsx`: リアルタイム統計、打刻ログ（本日分）、従業員用クイックアクション。
+- `AttendanceList.tsx`: **快照モード（本日最終状態）**と**流水モード（期間内全記録）**の切り替え、高度なフィルタリング、CSV出力。
+- `Employees.tsx`: 従業員情報の一覧・詳細・作成・削除・CSV出力。
+- `LeaveManagement.tsx`: 休暇の申請（従業員）および履歴管理（管理者/HR）。
+- `EmployeeDetail.tsx`: 特定従業員の全履歴・監査トレース（変更履歴）の閲覧。
 
-### 通信 (Services) - `src/services`
-- `api.ts`: Axiosの設定（インターセプター、ベースURL、トークン管理）。
-- `attendance.api.ts`: 勤怠データに関連するAPIリクエスト関数。
-
-### 共通基盤 (Core)
-- `src/contexts/AuthContext.tsx`: ユーザーのログイン状態と権限（admin/manager/viewer）を管理。
-- `src/types/index.ts`: フロントエンド共通の型定義（バックエンドと同期）。
-- `src/components/`: 各画面で使用される共通コンポーネントやモーダル。
+### 共通コンポーネント (Components)
+- `src/components/common/Pagination.tsx`: **共通分页组件**。lucide-reactに依存せず、インラインSVGを使用した軽量設計。
+- `src/contexts/AuthContext.tsx`: 権限（admin/manager/hr/viewer）ベースのアクセス制御。
 
 ---
 
 ## 🔄 データの流れ (Data Flow Summary)
 
-1. **打刻**: フロントエンドから打刻APIが呼ばれる。
-2. **計算**: `attendance.service.ts` が `attendanceEngine.ts` を使い、ルールに基づいた「取整済み時間」と「状態」を算出。
-3. **保存**: `attendance.repo.ts` を通じて DB に保存。
-4. **表示**: Dashboard または AttendanceList がデータを取得し、権限に応じた表示を行う。
+1. **打刻**: フロントエンドまたはQRスキャナーからAPI呼出。
+2. **計算・同期**: `attendance.service.ts` が状態を判定し、`attendance.repo.ts` を通じてDB保存。休暇承認時はプロフィールが自動同期される。
+3. **一覧表示**: 全てのデータリスト（Attendance/Employees/Leave）は**サーバーサイド分页・ソート**を介して取得。
+4. **管理**: 管理者/HRは「修正理由」を入力することで、過去の打刻を安全に修正し、監査ログを残せる。
